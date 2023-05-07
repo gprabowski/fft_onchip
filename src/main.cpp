@@ -18,8 +18,7 @@ int main() {
 
   // generate data
   std::transform(begin(data), end(data), begin(data), [&](auto) {
-    return 3.5;
-    std::complex<double>(dist(rd), dist(rd));
+    return std::complex<double>(dist(rd), dist(rd));
   });
 
   // compare correctness
