@@ -4,22 +4,58 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include <cufftdx.hpp>
+
+#include <config.hpp>
+
 namespace fft {
-size_t run_reference(const std::vector<std::complex<double>> &data,
-                     std::vector<std::complex<double>> &out) {
-  thrust::host_vector<cufftDoubleComplex> h_data;
-  thrust::device_vector<cufftDoubleComplex> d_data;
+
+using namespace cufftdx;
+
+template <typename FFT>
+__global__ void onchip_reference(typename FFT::value_type *data) {
+  using complex_type = typename FFT::value_type;
+  extern __shared__ typename FFT::value_type shared_data[];
+
+  const auto tid = threadIdx.x;
+
+  // 1. copy data
+  for (int id = tid; id < size_of<FFT>::value; id += blockDim.x) {
+    shared_data[id] = data[id];
+  }
+
+  FFT().execute(shared_data);
+
+  // 2. copy data back
+  for (int id = tid; id < size_of<FFT>::value; id += blockDim.x) {
+    data[id] = shared_data[id];
+  }
+}
+
+size_t run_reference(const std::vector<__half2> &data,
+                     std::vector<__half2> &out) {
+
+  using FFT = decltype(Size<N>() + Precision<float>() + Type<fft_type::c2c>() +
+                       Direction<fft_direction::forward>() + FFTsPerBlock<1>() +
+                       SM<750>() + Block());
+
+  cudaError_t error_code = cudaSuccess;
+
+  using complex_type = typename FFT::value_type;
+  thrust::host_vector<complex_type> h_data;
+  thrust::device_vector<complex_type> d_data;
 
   for (int i = 0; i < data.size(); ++i) {
-    h_data.push_back({data[i].real(), data[i].imag()});
+    h_data.push_back({data[i].x, data[i].y});
   }
 
   d_data = h_data;
-  cufftHandle plan;
-  cufftPlan1d(&plan, data.size(), CUFFT_Z2Z, 1);
+
   auto t1 = std::chrono::high_resolution_clock::now();
-  cufftExecZ2Z(plan, thrust::raw_pointer_cast(d_data.data()),
-               thrust::raw_pointer_cast(d_data.data()), CUFFT_FORWARD);
+  onchip_reference<FFT>
+      <<<1, FFT::block_dim,
+         data.size() * sizeof(float) * 2 + FFT::shared_memory_size>>>(
+          thrust::raw_pointer_cast(d_data.data()));
   h_data = d_data;
   auto t2 = std::chrono::high_resolution_clock::now();
 
@@ -27,7 +63,7 @@ size_t run_reference(const std::vector<std::complex<double>> &data,
       std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
 
   for (int i = 0; i < data.size(); ++i) {
-    out[i] = {h_data[i].x, h_data[i].y};
+    out[i] = __half2{h_data[i].x, h_data[i].y};
   }
 
   return res_ms.count();
