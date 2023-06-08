@@ -19,6 +19,7 @@ add_executable(gpu_fft
     src/main.cpp)
 
 target_include_directories(gpu_fft PUBLIC includes/)
+target_include_directories(gpu_fft PUBLIC thirdparty/cutlass/include)
 target_link_libraries(gpu_fft mathdx::cufftdx)
 
 target_link_libraries(gpu_fft CUDA::cufft CUDA::cudart)
