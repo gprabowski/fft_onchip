@@ -41,13 +41,6 @@ template <typename CT, int Size, int Radix> struct simple_fft {
   __device__ simple_fft(CT *d, CT *f) : sh_d(d), sh_f(f) {}
 
   __device__ void operator()() {
-    // 1. Create a DFT matrix for atomic FFTs
-    for (int id = tid; id < RadixSquared; id += threads.x) {
-      const auto column = id / Radix;
-      const auto row = id % Radix;
-      sh_f[id] = pow_theta<Radix>(row * column);
-    }
-
     auto thr_vmnk =
         typename TiledMma::ThrLayoutVMNK{}.get_flat_coord(laneIdx);
     auto thrmma = cute::ThrMMA<TiledMma, decltype(thr_vmnk)>(thr_vmnk);
@@ -57,6 +50,17 @@ template <typename CT, int Size, int Radix> struct simple_fft {
         cute::make_smem_ptr(sh_f),
         cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
         cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
+
+    Tensor tCsA = thrmma.partition_A(dft_matrix);                    
+
+    Tensor tCrA = thrmma.make_fragment_A(tCsA);              
+
+    const auto first = (threadIdx.x / 4) + (threadIdx.x % 4) * 8;
+    const auto row = first % 8;
+    const auto col = first / 8;
+
+    tCrA(0) = pow_theta<Radix>(row * col);
+    tCrA(1) = pow_theta<Radix>(row *(col + 4));
 
     auto data = cute::make_tensor(
         cute::make_smem_ptr(sh_d),
@@ -68,25 +72,13 @@ template <typename CT, int Size, int Radix> struct simple_fft {
         cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
         cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
 
+    __syncthreads();
+
+    register_gemm(thrmma, tCrA, data_transposed, data, true);
 
     __syncthreads();
 
-    // first iteration doesn't require twiddling
-    register_gemm(thrmma, dft_matrix, data_transposed, data);
-
-    __syncthreads();
-
-    // twiddle scale
-    for (int id = laneIdx; id < Radix * Radix; id += 32) {
-      const auto column = id / Radix;
-      const auto row = id % Radix;
-      const auto tw = pow_theta<Radix * Radix>(row * column);
-      data(row, column) *= tw;
-    }
-
-    __syncthreads();
-
-    register_gemm(thrmma, dft_matrix, data, data_transposed);
+    register_gemm(thrmma, tCrA, data, data_transposed);
 
     __syncthreads();
   }
