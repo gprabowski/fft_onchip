@@ -8,49 +8,32 @@
 
 #include <thrust/complex.h>
 
-#include <custom_cute.cuh>
+#include <register_cute.cuh>
 
 namespace fft {
-
 using namespace cute;
-
-
-template <int Num, int Base> inline constexpr int static_log2() {
-  if constexpr (Num == Base)
-    return 1;
-  return 1 + static_log<Num / Base, Base>();
-}
 
 template <typename CT, int Size, int Radix> struct simple_fft {
   using this_t = simple_fft<CT, Size, Radix>;
+  static constexpr auto RadixSquared = Radix * Radix;
 
-  using TensorTiledMma =
+  using TensorShape = Shape<_1, _1, _1>;
+  using TiledMma =
       cute::TiledMMA<cute::MMA_Atom<cute::SM80_8x8x4_C64C64C64C64_TN>, // Atom
-                     Layout<Shape<_1, _1, _1>>>;
+                     Layout<TensorShape>>;
 
-  using UniTiledMma =
-      cute::TiledMMA<cute::MMA_Atom<cute::UniversalFMA<CT, CT, CT, CT>>, // Atom
-                     Layout<Shape<_8, _4, _1>>>;
-
-  using TiledMma = TensorTiledMma;
-
-  static constexpr auto warps_in_group = 1;
-  static constexpr auto BlockSize = (32 * warps_in_group) * (Size / Radix);
-  static constexpr dim3 threads = BlockSize;
-  static constexpr int RadixSquared = Radix * Radix;
-  static constexpr int depth = static_log2<Size, Radix>();
+  static constexpr dim3 threads = 32;
 
   const int tid = threadIdx.x;
-  const int local_idx = tid % (warps_in_group * 32);
-  const int warpIdx = tid / 32;
-  const int warp_group = warpIdx / (warps_in_group);
-  const int warp_group_idx = warpIdx % (warps_in_group);
   const int laneIdx = tid % 32;
 
-  inline __device__ CT pow_theta(int p, int q) {
-    p = p % q;
-    const auto ang = (-2.f * PI * p) / q;
-    return {cos(ang), sin(ang)};
+  template<int N>
+  inline __device__ CT pow_theta(int p) const {
+    p = p % N;
+    double s, c;
+    const double ang = p * (-2.0 / N);
+    sincospi(ang, &s, &c);
+    return {c, s};
   }
 
   CT *sh_d, *sh_f;
@@ -59,11 +42,15 @@ template <typename CT, int Size, int Radix> struct simple_fft {
 
   __device__ void operator()() {
     // 1. Create a DFT matrix for atomic FFTs
-    for (int id = tid; id < RadixSquared; id += BlockSize) {
+    for (int id = tid; id < RadixSquared; id += threads.x) {
       const auto column = id / Radix;
       const auto row = id % Radix;
-      sh_f[id] = pow_theta(row * column, Radix);
+      sh_f[id] = pow_theta<Radix>(row * column);
     }
+
+    auto thr_vmnk =
+        typename TiledMma::ThrLayoutVMNK{}.get_flat_coord(laneIdx);
+    auto thrmma = cute::ThrMMA<TiledMma, decltype(thr_vmnk)>(thr_vmnk);
 
     // Define CuTe tensors
     auto dft_matrix = cute::make_tensor(
@@ -71,27 +58,37 @@ template <typename CT, int Size, int Radix> struct simple_fft {
         cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
         cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
 
-    auto out_matrix = cute::make_tensor(
+    auto data = cute::make_tensor(
         cute::make_smem_ptr(sh_d),
-        cute::make_shape(cute::Int<Radix>{}, cute::Int<1>{}),
-        cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
-
-    auto data_first = cute::make_tensor(
-        cute::make_smem_ptr(sh_d),
-        cute::make_shape(cute::Int<1>{}, cute::Int<Radix>{}),
+        cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
         cute::make_stride(cute::Int<Radix>{}, cute::Int<1>{}));
 
-    auto thr_vmnk =
-        typename TiledMma::ThrLayoutVMNK{}.get_flat_coord(laneIdx);
-    auto thrmma = cute::ThrMMA<TiledMma, decltype(thr_vmnk)>(thr_vmnk);
+    auto data_transposed = cute::make_tensor(
+        cute::make_smem_ptr(sh_d),
+        cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
+        cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
+
 
     __syncthreads();
 
     // first iteration doesn't require twiddling
-    custom_gemm(thrmma, dft_matrix, data_first, out_matrix);
+    register_gemm(thrmma, dft_matrix, data_transposed, data);
 
     __syncthreads();
 
+    // twiddle scale
+    for (int id = laneIdx; id < Radix * Radix; id += 32) {
+      const auto column = id / Radix;
+      const auto row = id % Radix;
+      const auto tw = pow_theta<Radix * Radix>(row * column);
+      data(row, column) *= tw;
+    }
+
+    __syncthreads();
+
+    register_gemm(thrmma, dft_matrix, data, data_transposed);
+
+    __syncthreads();
   }
 
 };

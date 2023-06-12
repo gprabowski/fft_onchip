@@ -12,6 +12,7 @@
 
 #include <legacy16_fft.cuh>
 #include <legacy_fft.cuh>
+#include <simple_fft.cuh>
 #include <tester.cuh>
 
 namespace testing {
@@ -112,13 +113,12 @@ void test(std::vector<config::CT> &data) {
   std::vector<config::CT> out_algorithm(data.size()),
       out_reference(data.size());
 
-  using customExec = fft::fft_executor<config::CT, config::N, config::radix>;
+  using customExec = fft::simple_fft<config::CT, config::N, config::radix>;
   using refExec = fft::reference_fft<config::N>;
-  using legacyExec = fft::legacy_fft<config::CT, config::N>;
 
   auto alg_data = data;
   auto ref_data = data;
-  alg_run = run_perf_test<config::CT, config::N, config::radix, legacyExec>(
+  alg_run = run_perf_test<config::CT, config::N, config::radix, customExec>(
       alg_data, out_algorithm);
   ref_run = run_perf_test<refExec::VT, config::N, config::radix, refExec>(
       ref_data, out_reference);
@@ -131,7 +131,7 @@ void test(std::vector<config::CT> &data) {
   for (int i = 0; i < data.size(); ++i) {
     const auto se =
         norm(out_reference[i] - out_algorithm[reverseDigits(i, config::radix)]);
-    if constexpr (false) {
+    if constexpr (true) {
       std::cout << "R: " << out_reference[i].real() << " "
                 << out_reference[i].imag() << " A: "
                 << out_algorithm[reverseDigits(i, config::radix)].real() << " "

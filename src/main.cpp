@@ -28,8 +28,8 @@ int main() {
 
   // generate data
   std::transform(begin(data), end(data), begin(data), [&](auto) {
-    // return thrust::complex<double>{dist(rd), dist(rd)};
-    return thrust::complex<double>{10.0, 0.0};
+    return thrust::complex<double>{dist(rd), dist(rd)};
+    // return thrust::complex<double>{10.0, 0.0};
   });
 
   // compare correctness
