@@ -8,14 +8,14 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED TRUE)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 
-set(CMAKE_BUILD_TYPE Debug)
+set(CMAKE_BUILD_TYPE Release)
+
 
 find_package(CUDAToolkit REQUIRED)
 find_package(mathdx REQUIRED COMPONENTS cufftdx CONFIG)
 
 add_executable(gpu_fft 
-    src/reference.cu
-    src/algorithm.cu
+    src/perf_test.cu
     src/main.cpp)
 
 target_include_directories(gpu_fft PUBLIC includes/)

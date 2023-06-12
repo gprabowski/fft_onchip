@@ -1,3 +1,11 @@
 #pragma once
+#include <thrust/complex.h>
 
-constexpr int N = 1024;
+namespace config {
+
+using CT = thrust::complex<double>;
+
+constexpr int radix = 16;
+constexpr int N = radix * radix * radix;
+
+} // namespace config
