@@ -10,6 +10,8 @@
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include <legacy16_fft.cuh>
+#include <legacy_fft.cuh>
 #include <tester.cuh>
 
 namespace testing {
@@ -56,6 +58,7 @@ size_t run_perf_test(const std::vector<config::CT> &data,
   tester::fft_tester<1, CT, FFTExec, Size, Radix>
       <<<1, FFTExec::threads, sm_size>>>(
           thrust::raw_pointer_cast(d_data.data()));
+  std::cout << FFTExec::threads << std::endl;
   gpuErrchk(cudaPeekAtLastError());
   gpuErrchk(cudaDeviceSynchronize());
   h_data = d_data;
@@ -111,10 +114,11 @@ void test(std::vector<config::CT> &data) {
 
   using customExec = fft::fft_executor<config::CT, config::N, config::radix>;
   using refExec = fft::reference_fft<config::N>;
+  using legacyExec = fft::legacy_fft<config::CT, config::N>;
 
   auto alg_data = data;
   auto ref_data = data;
-  alg_run = run_perf_test<config::CT, config::N, config::radix, customExec>(
+  alg_run = run_perf_test<config::CT, config::N, config::radix, legacyExec>(
       alg_data, out_algorithm);
   ref_run = run_perf_test<refExec::VT, config::N, config::radix, refExec>(
       ref_data, out_reference);

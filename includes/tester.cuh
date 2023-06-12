@@ -16,8 +16,12 @@ namespace tester {
         shared_data[id] = data[id];
       }
 
-      __syncthreads();
+      // First iteration is set for 11000
+      // Second iteration is set for 1000
+      // The result is time difference 
+      // divided by 10000
 
+      __syncthreads();
       FFTExec fft(shared_data, shared_F);
       for (int i = 0; i < InnerRepeats; ++i) {
         fft();
