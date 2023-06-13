@@ -126,11 +126,8 @@ template <typename CT, int Size, int Radix> struct simple_fft {
     tCrC(1) *= pow_theta<64>(rows * cols);
 
     #define FULL_MASK 0xffffffff
-    const auto val0 = CT{__shfl_sync(FULL_MASK, tCrC(idx1).real(), add1), __shfl_sync(FULL_MASK, tCrC(idx1).imag(), add1)};
-    const auto val1 = CT{__shfl_sync(FULL_MASK, tCrC(idx2).real(), add2), __shfl_sync(FULL_MASK, tCrC(idx2).imag(), add2)};
-
-    tCsBf(0) = val0;
-    tCsBf(1) = val1;
+    tCrB(0)= CT{__shfl_sync(FULL_MASK, tCrC(idx1).real(), add1), __shfl_sync(FULL_MASK, tCrC(idx1).imag(), add1)};
+    tCrB(1)= CT{__shfl_sync(FULL_MASK, tCrC(idx2).real(), add2), __shfl_sync(FULL_MASK, tCrC(idx2).imag(), add2)};
 
     clear(tCrC);
 
