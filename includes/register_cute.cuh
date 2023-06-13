@@ -23,6 +23,7 @@ template <class... Args,
                           BLayout::rank == 2 && is_smem<TB>::value &&
                           CLayout::rank == 2 && is_smem<TC>::value)>
 __device__
+__forceinline__
 void
 register_gemm(ThrMMA<Args...> const& thr_mma,
      Tensor<TA, ALayout> tCrA,
@@ -30,46 +31,13 @@ register_gemm(ThrMMA<Args...> const& thr_mma,
      Tensor<TC, CLayout> sC, 
      bool twiddle = false)
 {
-  CUTE_STATIC_ASSERT_V(size<0>(sB) == size<1>(sC));  // BN == CN
+  Tensor tCsB = thr_mma.partition_B(sB);
+  Tensor tCsC = thr_mma.partition_C(sC);
+  Tensor tCrB = thr_mma.make_fragment_B(tCsB);
+  Tensor tCrC = thr_mma.make_fragment_C(tCsC);
 
-  using TypeA = typename TA::value_type;
-  using TypeB = typename TB::value_type;
-  using TypeC = typename TC::value_type;
+  cute::copy(tCsB, tCrB);
 
-  // Original, static size of the problem
-  auto M = size<0>(sC);
-  auto N = size<1>(sC);
-  auto K = size<1>(sC);
-
-  // Block size of the compute tile
-  auto BLK_M = tile_size<0>(thr_mma);
-  auto BLK_N = tile_size<1>(thr_mma);
-  auto BLK_K = tile_size<2>(thr_mma);
-
-  // Partition the sA and sB tiles across the threads for the MMA
-  Tensor tCsB = thr_mma.partition_B(sB);                    // (MMA,MMA_N,MMA_K)
-  Tensor tCsC = thr_mma.partition_C(sC);                    // (MMA,MMA_M,MMA_N)
-  // Create register tensors for the MMA to operate on
-  Tensor tCrB = thr_mma.make_fragment_B(tCsB);                      // (MMA,MMA_N,MMA_K)
-  Tensor tCrC = thr_mma.make_fragment_C(tCsC);                      // (MMA,MMA_M,MMA_N)
-
-  //
-  // PREFETCH k_block = 0 (with k-predication)
-  //
-
-  CUTE_UNROLL
-  for (int i = 0; i < size<0>(tCsB); ++i) {                // Copy MMA_I
-      CUTE_UNROLL
-      for (int n = 0; n < size<1>(tCsB); ++n) {            // Copy MMA_N, predicated on n
-        tCrB(i,n,0) = tCsB(i,n,0);
-    }
-  }
-
-  //
-  // MAINLOOP
-  //
-
-  // Clear accumulators
   clear(tCrC);
 
   constexpr int K_BLOCK_MAX = size<2>(tCrA);
@@ -77,22 +45,6 @@ register_gemm(ThrMMA<Args...> const& thr_mma,
   CUTE_UNROLL
   for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
   {
-    // static-if load the next k_block. No k-predication required on these loads.
-    if (k_block < K_BLOCK_MAX-1)
-    {
-      // Load the next k_block
-      int k_next = k_block + 1;
-
-      CUTE_UNROLL
-      for (int n = 0; n < size<1>(tCsB); ++n) {            // Copy MMA_N
-        CUTE_UNROLL
-        for (int i = 0; i < size<0>(tCsB); ++i) {          // Copy MMA_I predicated on n
-          tCrB(i,n,k_next) = tCsB(i,n,k_next);
-        }
-      }
-    }
-
-    // GEMM on k_block in registers
     gemm(thr_mma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
   }
 
@@ -103,4 +55,3 @@ register_gemm(ThrMMA<Args...> const& thr_mma,
   tCsC(0) = twiddle ? pow_theta<64>(row * col) * tCrC(0) : tCrC(0);
   tCsC(1) = twiddle ? pow_theta<64>(row *(col + 1)) * tCrC(1) : tCrC(1);
 }
-

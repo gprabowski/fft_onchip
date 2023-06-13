@@ -8,7 +8,19 @@
 
 #include <thrust/complex.h>
 
-#include <register_cute.cuh>
+template<int N>
+inline __device__ config::CT pow_theta(int p) {
+    p = p % N;
+    double s, c;
+    const double ang = p * (-2.0 / N);
+    sincospi(ang, &s, &c);
+    return {c, s};
+}
+
+__device__ __forceinline__ int descramble(int a) {
+    a = a & (63 ^ 8);
+    return (((a & 7) << 3) | (a & 48)>>4);
+}
 
 namespace fft {
 using namespace cute;
@@ -74,14 +86,64 @@ template <typename CT, int Size, int Radix> struct simple_fft {
 
     __syncthreads();
 
-    register_gemm(thrmma, tCrA, data_transposed, data, true);
+    Tensor tCsB = thrmma.partition_B(data_transposed);
+    Tensor tCsC = thrmma.partition_C(data);
+    Tensor tCrB = thrmma.make_fragment_B(tCsB);
+    Tensor tCrC = thrmma.make_fragment_C(tCsC);
 
-    __syncthreads();
+    cute::copy(tCsB, tCrB);
 
-    register_gemm(thrmma, tCrA, data, data_transposed);
+    clear(tCrC);
+
+    constexpr int K_BLOCK_MAX = size<2>(tCrA);
+
+    CUTE_UNROLL
+    for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+    {
+      gemm(thrmma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
+    }
+
+    const auto firstc = threadIdx.x * 2;
+    const auto rowc = firstc % 8;
+    const auto colc = firstc / 8;
+
+    const auto firsts = firstc + 1;
+    const auto rows = firsts % 8;
+    const auto cols = firsts / 8;
+
+    const auto needed0 = (threadIdx.x >> 2) * 8 + (threadIdx.x % 4);
+    const auto needed1 = needed0 + 4;
+
+    const bool idx1 = needed0 & 1;
+    const auto add1 = needed0 >> 1;
+    const bool idx2 = needed1 & 1;
+    const auto add2 = needed1 >> 1;
+
+    Tensor tCsBf = thrmma.partition_B(data);
+    Tensor tCsCf = thrmma.partition_C(data_transposed);
+
+    tCrC(0) *= pow_theta<64>(rowc * colc);
+    tCrC(1) *= pow_theta<64>(rows * cols);
+
+    #define FULL_MASK 0xffffffff
+    const auto val0 = CT{__shfl_sync(FULL_MASK, tCrC(idx1).real(), add1), __shfl_sync(FULL_MASK, tCrC(idx1).imag(), add1)};
+    const auto val1 = CT{__shfl_sync(FULL_MASK, tCrC(idx2).real(), add2), __shfl_sync(FULL_MASK, tCrC(idx2).imag(), add2)};
+
+    tCsBf(0) = val0;
+    tCsBf(1) = val1;
+
+    clear(tCrC);
+
+    CUTE_UNROLL
+    for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
+    {
+      gemm(thrmma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
+    }
+
+    tCsCf(0) = tCrC(0);
+    tCsCf(1) = tCrC(1);
 
     __syncthreads();
   }
-
 };
 }

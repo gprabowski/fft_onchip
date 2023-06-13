@@ -131,7 +131,7 @@ void test(std::vector<config::CT> &data) {
   for (int i = 0; i < data.size(); ++i) {
     const auto se =
         norm(out_reference[i] - out_algorithm[reverseDigits(i, config::radix)]);
-    if constexpr (true) {
+    if constexpr (false) {
       std::cout << "R: " << out_reference[i].real() << " "
                 << out_reference[i].imag() << " A: "
                 << out_algorithm[reverseDigits(i, config::radix)].real() << " "
