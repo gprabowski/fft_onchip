@@ -1,13 +1,5 @@
 #pragma once
 
-#include <chrono>
-#include <vector>
-#include <complex>
-
-#include <thrust/complex.h>
-
-#include <common.cuh>
-
 namespace fft {
 
 template <int Num, int Base> inline constexpr int static_log2() {
@@ -36,9 +28,9 @@ template <typename CT, int Size> struct legacy_fft {
     return {c, s};
   }
 
-  CT *sh_d, *sh_f;
+  CT *sh_d;
 
-  __device__ legacy_fft(CT *d, CT *f) : sh_d(d), sh_f(f) {}
+  __device__ legacy_fft(CT *d) : sh_d(d) {}
 
     inline __device__ CT sqr_1(const CT &a) {
       return {a.real() * a.real() - a.imag() * a.imag(), 2.0f * a.real() * a.imag()};

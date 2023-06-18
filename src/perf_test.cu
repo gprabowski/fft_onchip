@@ -1,8 +1,8 @@
+#include "config.hpp"
 #include <perf_test.cuh>
 
 #include <iostream>
 
-#include <thrust/complex.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
@@ -13,11 +13,42 @@
 #include <simple_fft.cuh>
 #include <tester.cuh>
 
+#include <chrono>
+
 namespace testing {
+
+template <int InnerRuns, int SharedSize, typename CT, int Size, int Radix,
+          typename FFTExec>
+__forceinline__ double run_fft_kernel(CT *data) {
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+
+  gpuErrchk(cudaFuncSetAttribute(
+      tester::fft_tester<InnerRuns, CT, FFTExec, Size, Radix>,
+      cudaFuncAttributeMaxDynamicSharedMemorySize, SharedSize));
+
+  gpuErrchk(cudaEventRecord(start));
+  tester::fft_tester<InnerRuns, CT, FFTExec, Size, Radix>
+      <<<1, FFTExec::threads, SharedSize>>>(thrust::raw_pointer_cast(data));
+  gpuErrchk(cudaEventRecord(stop));
+  gpuErrchk(cudaPeekAtLastError());
+  gpuErrchk(cudaDeviceSynchronize());
+
+  float time_elapsed;
+  cudaEventElapsedTime(&time_elapsed, start, stop);
+
+  // return microseconds
+  return time_elapsed * 1000.f;
+}
 
 template <typename CT, int Size, int Radix, typename FFTExec>
 double run_perf_test(const std::vector<config::CT> &data,
                      std::vector<config::CT> &out) {
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+
   thrust::host_vector<CT> h_data;
   thrust::device_vector<CT> d_data;
 
@@ -27,74 +58,33 @@ double run_perf_test(const std::vector<config::CT> &data,
 
   d_data = h_data;
 
-  constexpr auto sm_size = (Size + Radix * Radix + 32) * sizeof(CT);
-
-  gpuErrchk(cudaFuncSetAttribute(
-      tester::fft_tester<1, CT, FFTExec, Size, Radix>,
-      cudaFuncAttributeMaxDynamicSharedMemorySize, sm_size));
-
-  gpuErrchk(cudaFuncSetAttribute(
-      tester::fft_tester<1000, CT, FFTExec, Size, Radix>,
-      cudaFuncAttributeMaxDynamicSharedMemorySize, sm_size));
-
-  gpuErrchk(cudaFuncSetAttribute(
-      tester::fft_tester<11000, CT, FFTExec, Size, Radix>,
-      cudaFuncAttributeMaxDynamicSharedMemorySize, sm_size));
+  constexpr auto sm_size = Size * sizeof(CT);
 
   // correctness check
-  tester::fft_tester<1, CT, FFTExec, Size, Radix>
-      <<<1, FFTExec::threads, sm_size>>>(
-          thrust::raw_pointer_cast(d_data.data()));
-  gpuErrchk(cudaPeekAtLastError());
-  gpuErrchk(cudaDeviceSynchronize());
-  h_data = d_data;
+  run_fft_kernel<1, sm_size, CT, Size, Radix, FFTExec>(
+      thrust::raw_pointer_cast(d_data.data()));
 
+  h_data = d_data;
   for (int i = 0; i < data.size(); ++i) {
     out[i] = config::CT{h_data[i].real(), h_data[i].imag()};
   }
 
-  auto t1 = std::chrono::high_resolution_clock::now();
-  tester::fft_tester<1000, CT, FFTExec, Size, Radix>
-      <<<1, FFTExec::threads, sm_size>>>(
+  const auto time_1000 =
+      run_fft_kernel<1000, sm_size, CT, Size, Radix, FFTExec>(
           thrust::raw_pointer_cast(d_data.data()));
-  gpuErrchk(cudaPeekAtLastError());
-  gpuErrchk(cudaDeviceSynchronize());
-  auto t2 = std::chrono::high_resolution_clock::now();
 
-  const auto run100_t =
-      std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
-
-  t1 = std::chrono::high_resolution_clock::now();
-  tester::fft_tester<11000, CT, FFTExec, Size, Radix>
-      <<<1, FFTExec::threads, sm_size>>>(
+  const auto time_11000 =
+      run_fft_kernel<11000, sm_size, CT, Size, Radix, FFTExec>(
           thrust::raw_pointer_cast(d_data.data()));
-  gpuErrchk(cudaPeekAtLastError());
-  gpuErrchk(cudaDeviceSynchronize());
-  h_data = d_data;
-  t2 = std::chrono::high_resolution_clock::now();
 
-  const auto run1100_t =
-      std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
-
+  // Will return time in microseconds
   const double final_time =
-      static_cast<double>(run1100_t.count() - run100_t.count()) / 10000.0;
+      static_cast<double>(time_11000 - time_1000) / 10000.0;
 
   return final_time;
 }
 
-__host__ __device__ int reverseDigits(int number, int base) {
-  int reversedNumber = 0;
-
-  while (number > 0) {
-    reversedNumber = reversedNumber * base + number % base;
-    number /= base;
-  }
-
-  return reversedNumber;
-}
-
 void test(std::vector<config::CT> &data) {
-  double alg_run = 0, ref_run = 0;
   std::vector<config::CT> out_algorithm(data.size()),
       out_reference(data.size());
 
@@ -103,28 +93,31 @@ void test(std::vector<config::CT> &data) {
 
   auto alg_data = data;
   auto ref_data = data;
-  alg_run = run_perf_test<config::CT, config::N, config::radix, customExec>(
-      alg_data, out_algorithm);
 
-  ref_run = run_perf_test<refExec::VT, config::N, config::radix, refExec>(
-      ref_data, out_reference);
+  const auto alg_run =
+      run_perf_test<config::CT, config::N, config::radix, customExec>(
+          alg_data, out_algorithm);
 
-  std::cout << "Algorithm took: " << alg_run << " microseconds \n";
-  std::cout << "Reference took: " << ref_run << " microseconds \n";
+  const auto ref_run =
+      run_perf_test<refExec::VT, config::N, config::radix, refExec>(
+          ref_data, out_reference);
 
   double mse{0.0};
 
   for (int i = 0; i < data.size(); ++i) {
     const auto se = norm(out_reference[i] - out_algorithm[i]);
-    if constexpr (false) {
-      std::cout << "R: " << out_reference[i].real() << " "
-                << out_reference[i].imag() << " A: " << out_algorithm[i].real()
-                << " " << out_algorithm[i].imag() << std::endl;
+    if constexpr (config::print_results) {
+      std::cout << " Ref: " << out_reference[i].real() << " "
+                << out_reference[i].imag()
+                << " Ten: " << out_algorithm[i].real() << " "
+                << out_algorithm[i].imag() << std::endl;
     }
     mse += se;
   }
   mse /= data.size();
 
+  std::cout << "Tensor FFT took: " << alg_run << " microseconds \n";
+  std::cout << "Reference took: " << ref_run << " microseconds \n";
   std::cout << "MSE: " << mse << "\n";
 }
 } // namespace testing

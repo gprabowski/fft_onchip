@@ -1,12 +1,5 @@
 #pragma once
 
-#include <chrono>
-#include <vector>
-#include <complex>
-
-#include <cuda_fp16.h>
-
-#include <thrust/complex.h>
 #include <tensor_utils.cuh>
 
 #define FULL_MASK 0xffffffff
@@ -31,9 +24,9 @@ template <typename CT, int Size, int Radix> struct simple_fft {
     return {c, s};
   }
 
-  CT *sh_d, *sh_f;
+  CT *sh_d;
 
-  __device__ simple_fft(CT *d, CT *f) : sh_d(d), sh_f(f) {}
+  __device__ simple_fft(CT *d) : sh_d(d) {}
 
   __device__ void operator()() {
     // 0. Prepare result indices

@@ -1,11 +1,5 @@
 #pragma once
 
-#include <chrono>
-#include <vector>
-#include <complex>
-
-#include <thrust/complex.h>
-
 #include <common.cuh>
 
 namespace fft {
@@ -40,9 +34,9 @@ template <typename CT, int Size> struct legacy16_fft {
     return {c, s};
   }
 
-  CT *sh_d, *sh_f;
+  CT *sh_d;
 
-  __device__ legacy16_fft(CT *d, CT *f) : sh_d(d), sh_f(f) {}
+  __device__ legacy16_fft(CT *d) : sh_d(d) {}
 
 
     static inline __device__ CT sqr_1(const CT &a) {

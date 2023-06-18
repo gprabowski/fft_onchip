@@ -1,16 +1,5 @@
 #pragma once
 
-#include <chrono>
-#include <vector>
-#include <complex>
-
-#include <cuda_fp16.h>
-
-#include <thrust/complex.h> 
-
-#include <thrust/device_vector.h>
-#include <thrust/host_vector.h>
-
 #include <cufftdx.hpp>
 
 namespace fft {
@@ -24,7 +13,7 @@ template <int FftSize> struct reference_fft {
   using VT = typename FFT::value_type;
   static constexpr auto threads = FFT::block_dim;
   VT *sh_d;
-  __device__ reference_fft(VT *d, VT*s) : sh_d(d) {}
+  __device__ reference_fft(VT *d) : sh_d(d) {}
   __device__ void operator()() { FFT().execute(sh_d); };
 };
 }

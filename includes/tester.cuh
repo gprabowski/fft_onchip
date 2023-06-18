@@ -7,7 +7,6 @@ namespace tester {
     __global__ void fft_tester(CT *data) {
       extern __shared__ __align__(sizeof(CT)) char shared[];
       CT* shared_data = reinterpret_cast<CT*>(shared);
-      CT *shared_F = shared_data + Size;
 
       const auto tid = threadIdx.x;
 
@@ -23,7 +22,7 @@ namespace tester {
 
       __syncthreads();
 
-      FFTExec fft(shared_data, shared_F);
+      FFTExec fft(shared_data);
       for (int i = 0; i < InnerRepeats; ++i) {
         fft();
       }
