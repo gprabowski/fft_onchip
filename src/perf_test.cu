@@ -2,32 +2,18 @@
 
 #include <iostream>
 
-#include <algorithm.cuh>
-#include <cuda_fp16.h>
-#include <reference.cuh>
-
 #include <thrust/complex.h>
 #include <thrust/device_vector.h>
 #include <thrust/host_vector.h>
 
+#include <common.cuh>
 #include <legacy16_fft.cuh>
 #include <legacy_fft.cuh>
+#include <reference.cuh>
 #include <simple_fft.cuh>
 #include <tester.cuh>
 
 namespace testing {
-
-#define gpuErrchk(ans)                                                         \
-  { gpuAssert((ans), __FILE__, __LINE__); }
-inline void gpuAssert(cudaError_t code, const char *file, int line,
-                      bool abort = true) {
-  if (code != cudaSuccess) {
-    fprintf(stderr, "GPUassert: %s %s %d\n", cudaGetErrorString(code), file,
-            line);
-    if (abort)
-      exit(code);
-  }
-}
 
 template <typename CT, int Size, int Radix, typename FFTExec>
 double run_perf_test(const std::vector<config::CT> &data,
@@ -59,7 +45,6 @@ double run_perf_test(const std::vector<config::CT> &data,
   tester::fft_tester<1, CT, FFTExec, Size, Radix>
       <<<1, FFTExec::threads, sm_size>>>(
           thrust::raw_pointer_cast(d_data.data()));
-  std::cout << FFTExec::threads << std::endl;
   gpuErrchk(cudaPeekAtLastError());
   gpuErrchk(cudaDeviceSynchronize());
   h_data = d_data;
@@ -131,7 +116,7 @@ void test(std::vector<config::CT> &data) {
 
   for (int i = 0; i < data.size(); ++i) {
     const auto se = norm(out_reference[i] - out_algorithm[i]);
-    if constexpr (true) {
+    if constexpr (false) {
       std::cout << "R: " << out_reference[i].real() << " "
                 << out_reference[i].imag() << " A: " << out_algorithm[i].real()
                 << " " << out_algorithm[i].imag() << std::endl;

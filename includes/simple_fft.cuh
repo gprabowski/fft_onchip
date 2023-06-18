@@ -7,7 +7,6 @@
 #include <cuda_fp16.h>
 
 #include <thrust/complex.h>
-
 #include <tensor_utils.cuh>
 
 #define FULL_MASK 0xffffffff
@@ -72,17 +71,17 @@ template <typename CT, int Size, int Radix> struct simple_fft {
     const auto needed_lane_second = needed_lane_first + 2;
 
     // REUSING C REGISTERS HERE AS TEMP STORAGE, NO SEMANTIC MEANING
-    c1r = __shfl_sync(FULL_MASK, real(b1), needed_lane_first);
-    c1i = __shfl_sync(FULL_MASK, imag(b1), needed_lane_first);
-    c2r = __shfl_sync(FULL_MASK, real(b2), needed_lane_first);
-    c2i = __shfl_sync(FULL_MASK, imag(b2), needed_lane_first);
+    c1r = __shfl_sync(FULL_MASK, b1.real(), needed_lane_first);
+    c1i = __shfl_sync(FULL_MASK, b1.imag(), needed_lane_first);
+    c2r = __shfl_sync(FULL_MASK, b2.real(), needed_lane_first);
+    c2i = __shfl_sync(FULL_MASK, b2.imag(), needed_lane_first);
     const auto tmp = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};
 
     // REUSING C REGISTERS HERE AS TEMP STORAGE, NO SEMANTIC MEANING
-    c1r = __shfl_sync(FULL_MASK, real(b1), needed_lane_second);
-    c1i = __shfl_sync(FULL_MASK, imag(b1), needed_lane_second);
-    c2r = __shfl_sync(FULL_MASK, real(b2), needed_lane_second);
-    c2i = __shfl_sync(FULL_MASK, imag(b2), needed_lane_second);
+    c1r = __shfl_sync(FULL_MASK, b1.real(), needed_lane_second);
+    c1i = __shfl_sync(FULL_MASK, b1.imag(), needed_lane_second);
+    c2r = __shfl_sync(FULL_MASK, b2.real(), needed_lane_second);
+    c2i = __shfl_sync(FULL_MASK, b2.imag(), needed_lane_second);
 
     b1 = tmp;
     b2 = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};

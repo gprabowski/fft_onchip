@@ -30,7 +30,6 @@ int main() {
   int i = 0;
   std::transform(begin(data), end(data), begin(data), [&](auto) {
     return thrust::complex<double>{dist(rd), dist(rd)};
-    // return thrust::complex<double>{i++, 0.0};
   });
 
   // compare correctness

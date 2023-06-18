@@ -4,16 +4,11 @@
 #include <vector>
 #include <complex>
 
-#include <cuda_fp16.h>
-
 #include <thrust/complex.h>
 
-#include <custom_cute.cuh>
+#include <common.cuh>
 
 namespace fft {
-
-using namespace cute;
-
 
 template <int Num, int Base> inline constexpr int static_log2() {
   if constexpr (Num == Base)
