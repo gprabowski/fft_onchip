@@ -30,7 +30,7 @@ __forceinline__ double run_fft_kernel(CT *data) {
 
   gpuErrchk(cudaEventRecord(start));
   tester::fft_tester<InnerRuns, CT, FFTExec, Size, Radix>
-      <<<1, FFTExec::threads, SharedSize>>>(thrust::raw_pointer_cast(data));
+      <<<2800, FFTExec::threads, SharedSize>>>(thrust::raw_pointer_cast(data));
   gpuErrchk(cudaEventRecord(stop));
   gpuErrchk(cudaPeekAtLastError());
   gpuErrchk(cudaDeviceSynchronize());

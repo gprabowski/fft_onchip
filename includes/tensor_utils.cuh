@@ -21,3 +21,17 @@
     gemm8x8x8(a1.real(), a2.real(), b1.imag(), b2.imag(), c1i, c2i); \
     gemm8x8x8(-a1.imag(), -a2.imag(), b1.imag(), b2.imag(), c1r, c2r);
 
+
+// More register intesive, but only 3 dmma version of the above GEMM
+// to get the result from karatsuba, perform:
+// c1r = s21 - s11;
+// c1i = s31 - s21 - s11;
+// c2r = s22 - s21;
+// c2i = s32 - s22 - s21;
+/////////////////////////////////////////////////////////////////////////
+#define karatsuba_gemm8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32)           \
+  gemm8x8x8(a1.real(), a2.real(), b1.real(), b2.real(), s11, s12);             \
+  gemm8x8x8(a1.imag(), a2.imag(), b1.imag(), b2.imag(), s21, s22);             \
+  gemm8x8x8(a1.real() + a1.imag(), a2.real() + a2.imag(),                      \
+            b1.real() + b1.imag(), b2.real() + b2.imag(), s31, s32);
+
