@@ -8,9 +8,9 @@
 
 #include <common.cuh>
 #include <legacy16_fft.cuh>
-#include <legacy_fft.cuh>
+#include <legacy8_fft.cuh>
 #include <reference.cuh>
-#include <simple_fft.cuh>
+#include <tensor_fft.cuh>
 #include <tester.cuh>
 
 #include <chrono>
