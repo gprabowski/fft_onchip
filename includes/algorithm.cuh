@@ -50,8 +50,8 @@ template <typename CT, int Size, int Radix> struct fft_executor {
   template<int N>
   inline __device__ CT pow_theta(int p) const {
     p = p % N;
-    double s, c;
-    const double ang = p * (-2.0 / N);
+    float s, c;
+    const float ang = p * (-2.0 / N);
     sincospi(ang, &s, &c);
     return {c, s};
   }

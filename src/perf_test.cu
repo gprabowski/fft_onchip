@@ -30,7 +30,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line,
 }
 
 template <typename CT, int Size, int Radix, typename FFTExec>
-size_t run_perf_test(const std::vector<config::CT> &data,
+double run_perf_test(const std::vector<config::CT> &data,
                      std::vector<config::CT> &out) {
   thrust::host_vector<CT> h_data;
   thrust::device_vector<CT> d_data;
@@ -91,7 +91,7 @@ size_t run_perf_test(const std::vector<config::CT> &data,
   const auto run1100_t =
       std::chrono::duration_cast<std::chrono::microseconds>(t2 - t1);
 
-  const size_t final_time =
+  const double final_time =
       static_cast<double>(run1100_t.count() - run100_t.count()) / 10000.0;
 
   return final_time;
@@ -109,7 +109,7 @@ __host__ __device__ int reverseDigits(int number, int base) {
 }
 
 void test(std::vector<config::CT> &data) {
-  std::size_t alg_run = 0, ref_run = 0;
+  double alg_run = 0, ref_run = 0;
   std::vector<config::CT> out_algorithm(data.size()),
       out_reference(data.size());
 
@@ -120,6 +120,7 @@ void test(std::vector<config::CT> &data) {
   auto ref_data = data;
   alg_run = run_perf_test<config::CT, config::N, config::radix, customExec>(
       alg_data, out_algorithm);
+
   ref_run = run_perf_test<refExec::VT, config::N, config::radix, refExec>(
       ref_data, out_reference);
 
@@ -129,14 +130,11 @@ void test(std::vector<config::CT> &data) {
   double mse{0.0};
 
   for (int i = 0; i < data.size(); ++i) {
-    const auto se =
-        norm(out_reference[i] - out_algorithm[reverseDigits(i, config::radix)]);
-    if constexpr (false) {
+    const auto se = norm(out_reference[i] - out_algorithm[i]);
+    if constexpr (true) {
       std::cout << "R: " << out_reference[i].real() << " "
-                << out_reference[i].imag() << " A: "
-                << out_algorithm[reverseDigits(i, config::radix)].real() << " "
-                << out_algorithm[reverseDigits(i, config::radix)].imag()
-                << std::endl;
+                << out_reference[i].imag() << " A: " << out_algorithm[i].real()
+                << " " << out_algorithm[i].imag() << std::endl;
     }
     mse += se;
   }

@@ -8,31 +8,15 @@
 
 #include <thrust/complex.h>
 
-template<int N>
-inline __device__ config::CT pow_theta(int p) {
-    p = p % N;
-    double s, c;
-    const double ang = p * (-2.0 / N);
-    sincospi(ang, &s, &c);
-    return {c, s};
-}
+#include <tensor_utils.cuh>
 
-__device__ __forceinline__ int descramble(int a) {
-    a = a & (63 ^ 8);
-    return (((a & 7) << 3) | (a & 48)>>4);
-}
+#define FULL_MASK 0xffffffff
 
 namespace fft {
-using namespace cute;
 
 template <typename CT, int Size, int Radix> struct simple_fft {
   using this_t = simple_fft<CT, Size, Radix>;
   static constexpr auto RadixSquared = Radix * Radix;
-
-  using TensorShape = Shape<_1, _1, _1>;
-  using TiledMma =
-      cute::TiledMMA<cute::MMA_Atom<cute::SM80_8x8x4_C64C64C64C64_TN>, // Atom
-                     Layout<TensorShape>>;
 
   static constexpr dim3 threads = 32;
 
@@ -42,9 +26,9 @@ template <typename CT, int Size, int Radix> struct simple_fft {
   template<int N>
   inline __device__ CT pow_theta(int p) const {
     p = p % N;
-    double s, c;
-    const double ang = p * (-2.0 / N);
-    sincospi(ang, &s, &c);
+    float s, c;
+    const float ang = p * (-2.f / N);
+    sincospif(ang, &s, &c);
     return {c, s};
   }
 
@@ -53,94 +37,65 @@ template <typename CT, int Size, int Radix> struct simple_fft {
   __device__ simple_fft(CT *d, CT *f) : sh_d(d), sh_f(f) {}
 
   __device__ void operator()() {
-    auto thr_vmnk =
-        typename TiledMma::ThrLayoutVMNK{}.get_flat_coord(laneIdx);
-    auto thrmma = cute::ThrMMA<TiledMma, decltype(thr_vmnk)>(thr_vmnk);
+    // 0. Prepare result indices
+    const auto crow = laneIdx >> 2;
+    const auto ccol = ((laneIdx % 4) * 2); // or + 1
 
-    // Define CuTe tensors
-    auto dft_matrix = cute::make_tensor(
-        cute::make_smem_ptr(sh_f),
-        cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
-        cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
+    // 1. Fill A "Matrix" with twiddles
+    const auto arow = laneIdx >> 2;
+    const auto acol = laneIdx % 4;
+    const CT a1 = pow_theta<Radix>(arow * acol);
+    const CT a2 = pow_theta<Radix>(arow * (acol + 4));
 
-    Tensor tCsA = thrmma.partition_A(dft_matrix);                    
+    // 2. Load B elements
+    const auto brow = laneIdx % 4;
+    const auto bcol = laneIdx >> 2;
 
-    Tensor tCrA = thrmma.make_fragment_A(tCsA);              
+    // in here we tranpose the matrix (as its naturally
+    // set in memory in a column major fashion) 
+    CT b1 = sh_d[brow * 8 + bcol];
+    CT b2 = sh_d[(brow + 4) * 8 + bcol];
+    
+    // 3. prepare accumulators
+    double c1r{0}, c2r{0}, c1i{0}, c2i{0};
 
-    const auto first = (threadIdx.x / 4) + (threadIdx.x % 4) * 8;
-    const auto row = first % 8;
-    const auto col = first / 8;
+    // 3. First GEMM
+    complex_gemm8x8x8(a1, a2, b1, b2, c1r, c1i, c2r, c2i)
 
-    tCrA(0) = pow_theta<Radix>(row * col);
-    tCrA(1) = pow_theta<Radix>(row *(col + 4));
+    // 4. Twiddle
+    b1 = pow_theta<RadixSquared>(crow * ccol) * CT{c1r, c1i};
+    b2 = pow_theta<RadixSquared>(crow * (ccol + 1)) * CT{c2r, c2i};
 
-    auto data = cute::make_tensor(
-        cute::make_smem_ptr(sh_d),
-        cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
-        cute::make_stride(cute::Int<Radix>{}, cute::Int<1>{}));
+    // 5. Exchange elements
+    // effectively we transpose the matrix here
+    const auto needed_lane_first = bcol * 4 + brow / 2;
+    const auto needed_lane_second = needed_lane_first + 2;
 
-    auto data_transposed = cute::make_tensor(
-        cute::make_smem_ptr(sh_d),
-        cute::make_shape(cute::Int<Radix>{}, cute::Int<Radix>{}),
-        cute::make_stride(cute::Int<1>{}, cute::Int<Radix>{}));
+    // REUSING C REGISTERS HERE AS TEMP STORAGE, NO SEMANTIC MEANING
+    c1r = __shfl_sync(FULL_MASK, real(b1), needed_lane_first);
+    c1i = __shfl_sync(FULL_MASK, imag(b1), needed_lane_first);
+    c2r = __shfl_sync(FULL_MASK, real(b2), needed_lane_first);
+    c2i = __shfl_sync(FULL_MASK, imag(b2), needed_lane_first);
+    const auto tmp = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};
 
-    __syncthreads();
+    // REUSING C REGISTERS HERE AS TEMP STORAGE, NO SEMANTIC MEANING
+    c1r = __shfl_sync(FULL_MASK, real(b1), needed_lane_second);
+    c1i = __shfl_sync(FULL_MASK, imag(b1), needed_lane_second);
+    c2r = __shfl_sync(FULL_MASK, real(b2), needed_lane_second);
+    c2i = __shfl_sync(FULL_MASK, imag(b2), needed_lane_second);
 
-    Tensor tCsB = thrmma.partition_B(data_transposed);
-    Tensor tCsC = thrmma.partition_C(data);
-    Tensor tCrB = thrmma.make_fragment_B(tCsB);
-    Tensor tCrC = thrmma.make_fragment_C(tCsC);
+    b1 = tmp;
+    b2 = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};
 
-    cute::copy(tCsB, tCrB);
+    c1r = c1i = c2r = c2i = 0.0;
 
-    clear(tCrC);
+    // 6. Second GEMM
+    complex_gemm8x8x8(a1, a2, b1, b2, c1r, c1i, c2r, c2i)
 
-    constexpr int K_BLOCK_MAX = size<2>(tCrA);
-
-    CUTE_UNROLL
-    for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
-    {
-      gemm(thrmma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
-    }
-
-    const auto firstc = threadIdx.x * 2;
-    const auto rowc = firstc % 8;
-    const auto colc = firstc / 8;
-
-    const auto firsts = firstc + 1;
-    const auto rows = firsts % 8;
-    const auto cols = firsts / 8;
-
-    const auto needed0 = (threadIdx.x >> 2) * 8 + (threadIdx.x % 4);
-    const auto needed1 = needed0 + 4;
-
-    const bool idx1 = needed0 & 1;
-    const auto add1 = needed0 >> 1;
-    const bool idx2 = needed1 & 1;
-    const auto add2 = needed1 >> 1;
-
-    Tensor tCsBf = thrmma.partition_B(data);
-    Tensor tCsCf = thrmma.partition_C(data_transposed);
-
-    tCrC(0) *= pow_theta<64>(rowc * colc);
-    tCrC(1) *= pow_theta<64>(rows * cols);
-
-    #define FULL_MASK 0xffffffff
-    tCrB(0)= CT{__shfl_sync(FULL_MASK, tCrC(idx1).real(), add1), __shfl_sync(FULL_MASK, tCrC(idx1).imag(), add1)};
-    tCrB(1)= CT{__shfl_sync(FULL_MASK, tCrC(idx2).real(), add2), __shfl_sync(FULL_MASK, tCrC(idx2).imag(), add2)};
-
-    clear(tCrC);
-
-    CUTE_UNROLL
-    for (int k_block = 0; k_block < K_BLOCK_MAX; ++k_block)
-    {
-      gemm(thrmma, tCrA(_,_,k_block), tCrB(_,_,k_block), tCrC);
-    }
-
-    tCsCf(0) = tCrC(0);
-    tCsCf(1) = tCrC(1);
-
-    __syncthreads();
+    // 7. Save results
+    // perform digit reversal (that's why indexing is reversed)
+    sh_d[crow * 8 + ccol] = CT{c1r, c1i};
+    sh_d[crow * 8 + (ccol + 1)] = CT{c2r, c2i};
   }
 };
 }

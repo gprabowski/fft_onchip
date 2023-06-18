@@ -22,6 +22,7 @@ namespace tester {
       // divided by 10000
 
       __syncthreads();
+
       FFTExec fft(shared_data, shared_F);
       for (int i = 0; i < InnerRepeats; ++i) {
         fft();
