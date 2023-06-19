@@ -29,6 +29,7 @@ template <typename CT, int Size, int Radix> struct simple_fft {
   __device__ simple_fft(CT *d) : sh_d(d) {}
 
   __device__ void operator()() {
+    double s11{0}, s12{0}, s21{0}, s22{0}, s31{0}, s32{0};
     // 0. Prepare result indices
     const auto crow = laneIdx >> 2;
     const auto ccol = ((laneIdx % 4) * 2); // or + 1
@@ -52,7 +53,11 @@ template <typename CT, int Size, int Radix> struct simple_fft {
     double c1r{0}, c2r{0}, c1i{0}, c2i{0};
 
     // 3. First GEMM
-    complex_gemm8x8x8(a1, a2, b1, b2, c1r, c1i, c2r, c2i)
+    karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
+    c1r = s11 - s21;
+    c1i = s31 - s21 - s11;
+    c2r = s12 - s22;
+    c2i = s32 - s22 - s12;
 
     // 4. Twiddle
     b1 = pow_theta<RadixSquared>(crow * ccol) * CT{c1r, c1i};
@@ -79,10 +84,14 @@ template <typename CT, int Size, int Radix> struct simple_fft {
     b1 = tmp;
     b2 = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};
 
-    c1r = c1i = c2r = c2i = 0.0;
+    s11 = s12 = s21 = s22 = s31 = s32 = 0.0;
 
     // 6. Second GEMM
-    complex_gemm8x8x8(a1, a2, b1, b2, c1r, c1i, c2r, c2i)
+    karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
+    c1r = s11 - s21;
+    c1i = s31 - s21 - s11;
+    c2r = s12 - s22;
+    c2i = s32 - s22 - s12;
 
     // 7. Save results
     // perform digit reversal (that's why indexing is reversed)
