@@ -1,19 +1,17 @@
 #pragma once
 
 #include <tensor_utils.cuh>
-
-#define FULL_MASK 0xffffffff
+#include <cooperative_groups.h>
 
 namespace fft {
+
+namespace cg = cooperative_groups;
 
 template <typename CT, int Size, int Radix> struct simple_fft {
   using this_t = simple_fft<CT, Size, Radix>;
   static constexpr auto RadixSquared = Radix * Radix;
 
   static constexpr dim3 threads = 32;
-
-  const int tid = threadIdx.x;
-  const int laneIdx = tid % 32;
 
   template<int N>
   inline __device__ CT pow_theta(int p) const {
@@ -29,20 +27,26 @@ template <typename CT, int Size, int Radix> struct simple_fft {
   __device__ simple_fft(CT *d) : sh_d(d) {}
 
   __device__ void operator()() {
+    const auto grid = cg::this_grid();
+    const auto block = cg::this_thread_block();
+    const auto warp = cg::tiled_partition<32>(block);
+
+    const auto lane_idx = warp.thread_rank();
+
     double s11{0}, s12{0}, s21{0}, s22{0}, s31{0}, s32{0};
     // 0. Prepare result indices
-    const auto crow = laneIdx >> 2;
-    const auto ccol = ((laneIdx % 4) * 2); // or + 1
+    const auto crow = lane_idx >> 2;
+    const auto ccol = ((lane_idx % 4) * 2); // or + 1
 
     // 1. Fill A "Matrix" with twiddles
-    const auto arow = laneIdx >> 2;
-    const auto acol = laneIdx % 4;
+    const auto arow = lane_idx >> 2;
+    const auto acol = lane_idx % 4;
     const CT a1 = pow_theta<Radix>(arow * acol);
     const CT a2 = pow_theta<Radix>(arow * (acol + 4));
 
     // 2. Load B elements
-    const auto brow = laneIdx % 4;
-    const auto bcol = laneIdx >> 2;
+    const auto brow = lane_idx % 4;
+    const auto bcol = lane_idx >> 2;
 
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion) 
@@ -65,21 +69,21 @@ template <typename CT, int Size, int Radix> struct simple_fft {
 
     // 5. Exchange elements
     // effectively we transpose the matrix here
-    const auto needed_lane_first = bcol * 4 + brow / 2;
-    const auto needed_lane_second = needed_lane_first + 2;
+    const auto transpose_lane_b1 = bcol * 4 + brow / 2;
+    const auto transpose_lane_b2 = transpose_lane_b1 + 2;
 
     // REUSING C REGISTERS HERE AS TEMP STORAGE, NO SEMANTIC MEANING
-    c1r = __shfl_sync(FULL_MASK, b1.real(), needed_lane_first);
-    c1i = __shfl_sync(FULL_MASK, b1.imag(), needed_lane_first);
-    c2r = __shfl_sync(FULL_MASK, b2.real(), needed_lane_first);
-    c2i = __shfl_sync(FULL_MASK, b2.imag(), needed_lane_first);
+    c1r = warp.shfl(b1.real(), transpose_lane_b1);
+    c1i = warp.shfl(b1.imag(), transpose_lane_b1);
+    c2r = warp.shfl(b2.real(), transpose_lane_b1);
+    c2i = warp.shfl(b2.imag(), transpose_lane_b1);
     const auto tmp = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};
 
     // REUSING C REGISTERS HERE AS TEMP STORAGE, NO SEMANTIC MEANING
-    c1r = __shfl_sync(FULL_MASK, b1.real(), needed_lane_second);
-    c1i = __shfl_sync(FULL_MASK, b1.imag(), needed_lane_second);
-    c2r = __shfl_sync(FULL_MASK, b2.real(), needed_lane_second);
-    c2i = __shfl_sync(FULL_MASK, b2.imag(), needed_lane_second);
+    c1r = warp.shfl(b1.real(), transpose_lane_b2);
+    c1i = warp.shfl(b1.imag(), transpose_lane_b2);
+    c2r = warp.shfl(b2.real(), transpose_lane_b2);
+    c2i = warp.shfl(b2.imag(), transpose_lane_b2);
 
     b1 = tmp;
     b2 = (brow & 1) ? CT{c2r, c2i} : CT{c1r, c1i};

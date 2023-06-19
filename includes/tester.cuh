@@ -4,18 +4,21 @@
 #include <cooperative_groups/memcpy_async.h>
 
 namespace tester {
+
+namespace cg = cooperative_groups;
+
     template <int InnerRepeats, typename CT, typename FFTExec, int Size, 
              int Radix>
     __global__ void fft_tester(CT *data) {
       extern __shared__ __align__(sizeof(CT)) char shared[];
       CT* shared_data = reinterpret_cast<CT*>(shared);
 
-      auto grid = cooperative_groups::this_grid();
-      auto block = cooperative_groups::this_thread_block();
+      auto grid = cg::this_grid();
+      auto block = cg::this_thread_block();
 
       // 1. copy data
-      cooperative_groups::memcpy_async(block, shared_data, data + Size * grid.block_rank(), sizeof(CT) * Size);
-      cooperative_groups::wait(block);
+      cg::memcpy_async(block, shared_data, data + Size * grid.block_rank(), sizeof(CT) * Size);
+      cg::wait(block);
 
       // First iteration is set for 11000
       // Second iteration is set for 1000
