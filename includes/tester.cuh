@@ -13,10 +13,8 @@ namespace tester {
       auto grid = cooperative_groups::this_grid();
       auto block = cooperative_groups::this_thread_block();
 
-      const auto tid = threadIdx.x;
-
       // 1. copy data
-      cooperative_groups::memcpy_async(block, shared_data, data, sizeof(CT) * Size);
+      cooperative_groups::memcpy_async(block, shared_data, data + Size * grid.block_rank(), sizeof(CT) * Size);
       cooperative_groups::wait(block);
 
       // First iteration is set for 11000
@@ -29,10 +27,10 @@ namespace tester {
         fft();
       }
 
-      __syncthreads();
+      block.sync();
 
-      for (int id = tid; id < Size; id += blockDim.x) {
-        data[id] = shared_data[id];
-      }
+      const auto elems_per_t = Size / block.size();
+      const auto batch_size = elems_per_t * sizeof(CT);
+      memcpy(&data[Size * grid.block_rank() + block.thread_rank() * elems_per_t], &shared_data[block.thread_rank() * elems_per_t], batch_size);
     }
 }

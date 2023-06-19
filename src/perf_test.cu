@@ -29,8 +29,9 @@ __forceinline__ double run_fft_kernel(CT *data, size_t sm_count) {
       cudaFuncAttributeMaxDynamicSharedMemorySize, SharedSize));
 
   gpuErrchk(cudaEventRecord(start));
+  // Running around 100 blocks / SM
   tester::fft_tester<InnerRuns, CT, FFTExec, Size, Radix>
-      <<<10 * sm_count, FFTExec::threads, SharedSize>>>(
+      <<<config::sm_multiplier * sm_count, FFTExec::threads, SharedSize>>>(
           thrust::raw_pointer_cast(data));
   gpuErrchk(cudaEventRecord(stop));
   gpuErrchk(cudaPeekAtLastError());
@@ -58,8 +59,8 @@ double run_perf_test(const std::vector<config::CT> &data,
   thrust::host_vector<CT> h_data;
   thrust::device_vector<CT> d_data;
 
-  for (int i = 0; i < data.size(); ++i) {
-    h_data.push_back({data[i].real(), data[i].imag()});
+  for (int i = 0; i < data.size() * config::sm_multiplier * sm_count; ++i) {
+    h_data.push_back({data[i % Size].real(), data[i % Size].imag()});
   }
 
   d_data = h_data;
