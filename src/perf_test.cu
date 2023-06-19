@@ -19,7 +19,7 @@ namespace testing {
 
 template <int InnerRuns, int SharedSize, typename CT, int Size, int Radix,
           typename FFTExec>
-__forceinline__ double run_fft_kernel(CT *data) {
+__forceinline__ double run_fft_kernel(CT *data, size_t sm_count) {
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
@@ -30,7 +30,8 @@ __forceinline__ double run_fft_kernel(CT *data) {
 
   gpuErrchk(cudaEventRecord(start));
   tester::fft_tester<InnerRuns, CT, FFTExec, Size, Radix>
-      <<<2800, FFTExec::threads, SharedSize>>>(thrust::raw_pointer_cast(data));
+      <<<10 * sm_count, FFTExec::threads, SharedSize>>>(
+          thrust::raw_pointer_cast(data));
   gpuErrchk(cudaEventRecord(stop));
   gpuErrchk(cudaPeekAtLastError());
   gpuErrchk(cudaDeviceSynchronize());
@@ -49,6 +50,11 @@ double run_perf_test(const std::vector<config::CT> &data,
   cudaEventCreate(&start);
   cudaEventCreate(&stop);
 
+  // get number of SMs
+  cudaDeviceProp props;
+  cudaGetDeviceProperties(&props, 0);
+  const auto sm_count = props.multiProcessorCount;
+
   thrust::host_vector<CT> h_data;
   thrust::device_vector<CT> d_data;
 
@@ -62,7 +68,7 @@ double run_perf_test(const std::vector<config::CT> &data,
 
   // correctness check
   run_fft_kernel<1, sm_size, CT, Size, Radix, FFTExec>(
-      thrust::raw_pointer_cast(d_data.data()));
+      thrust::raw_pointer_cast(d_data.data()), sm_count);
 
   h_data = d_data;
   for (int i = 0; i < data.size(); ++i) {
@@ -71,11 +77,11 @@ double run_perf_test(const std::vector<config::CT> &data,
 
   const auto time_1000 =
       run_fft_kernel<1000, sm_size, CT, Size, Radix, FFTExec>(
-          thrust::raw_pointer_cast(d_data.data()));
+          thrust::raw_pointer_cast(d_data.data()), sm_count);
 
   const auto time_11000 =
       run_fft_kernel<11000, sm_size, CT, Size, Radix, FFTExec>(
-          thrust::raw_pointer_cast(d_data.data()));
+          thrust::raw_pointer_cast(d_data.data()), sm_count);
 
   // Will return time in microseconds
   const double final_time =

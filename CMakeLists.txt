@@ -23,3 +23,7 @@ target_include_directories(gpu_fft PUBLIC thirdparty/cutlass/include)
 target_link_libraries(gpu_fft mathdx::cufftdx)
 
 target_link_libraries(gpu_fft CUDA::cufft CUDA::cudart)
+
+target_compile_options(gpu_fft PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
+                       --generate-line-info
+                       >)
