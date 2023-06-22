@@ -10,7 +10,12 @@ namespace cg = cooperative_groups;
 template <typename CT, int Size> struct tensor_fft_4096 {
   using this_t = tensor_fft_4096<CT, Size>;
 
-  static constexpr auto threads = 32;
+  static constexpr auto num_warps = 8;
+  static constexpr auto threads = num_warps * 32;
+  static constexpr auto ffts_per_block = 1;
+  static constexpr auto ffts_per_unit = 1;
+
+  static_assert(Size == 4096, "SIZE MUST BE 4096");
 
   template <int N> inline __device__ CT pow_theta(int p) const {
     p = p % N;

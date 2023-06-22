@@ -16,13 +16,18 @@ __global__ void fft_tester(CT *data) {
   auto grid = cg::this_grid();
   auto block = cg::this_thread_block();
 
+  constexpr int elements_per_block =
+      Size * FFTExec::ffts_per_block * FFTExec::ffts_per_unit;
+
   // 1. copy data
-  cg::memcpy_async(block, shared_data,
-                   data + Size * FFTExec::ffts_per_unit *
-                              FFTExec::ffts_per_block * grid.block_rank(),
-                   sizeof(CT) * Size * FFTExec::ffts_per_block *
-                       FFTExec::ffts_per_unit);
-  cg::wait(block);
+  if constexpr (false) {
+    cg::memcpy_async(block, shared_data,
+                     data + elements_per_block * grid.block_rank(),
+                     sizeof(CT) * elements_per_block);
+    cg::wait(block);
+  }
+
+  block.sync();
 
   // First iteration is set for 11000
   // Second iteration is set for 1000
@@ -36,12 +41,13 @@ __global__ void fft_tester(CT *data) {
 
   block.sync();
 
-  const auto elems_per_t =
+  const auto elems_per_thread =
       (Size * FFTExec::ffts_per_block * FFTExec::ffts_per_unit) / block.size();
-  const auto batch_size = elems_per_t * sizeof(CT);
-  memcpy(&data[Size * FFTExec::ffts_per_block * FFTExec::ffts_per_unit *
-                   grid.block_rank() +
-               block.thread_rank() * elems_per_t],
-         &shared_data[block.thread_rank() * elems_per_t], batch_size);
+  const auto batch_size = elems_per_thread * sizeof(CT);
+  if (false) {
+    memcpy(&data[elements_per_block * grid.block_rank() +
+                 block.thread_rank() * elems_per_thread],
+           &shared_data[block.thread_rank() * elems_per_thread], batch_size);
+  }
 }
 } // namespace tester
