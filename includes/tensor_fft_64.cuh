@@ -14,7 +14,7 @@ template <typename CT, int Size> struct tensor_fft_64 {
 
   static constexpr auto threads = 32;
   static constexpr auto ffts_per_block = 2;
-  static constexpr auto ffts_per_unit = 4;
+  static constexpr auto ffts_per_unit = 8;
 
   static_assert(Size == 64, "SIZE MUST BE 64");
 
@@ -80,7 +80,8 @@ template <typename CT, int Size> struct tensor_fft_64 {
       // 5. Save results
       // perform digit reversal (that's why indexing is reversed)
       local_data[i * Size + indexing.crow * 8 + indexing.ccol] = local_b[2 * i];
-      local_data[i * Size + indexing.crow * 8 + (indexing.ccol + 1)] = local_b[2 * i + 1];
+      local_data[i * Size + indexing.crow * 8 + (indexing.ccol + 1)] =
+          local_b[2 * i + 1];
     }
   }
 };

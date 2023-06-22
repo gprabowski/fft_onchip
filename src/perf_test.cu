@@ -10,7 +10,9 @@
 #include <legacy16_fft.cuh>
 #include <legacy8_fft.cuh>
 #include <reference.cuh>
+#include <tensor_fft_4096.cuh>
 #include <tensor_fft_64.cuh>
+#include <tensor_fft_8.cuh>
 #include <tester.cuh>
 
 #include <chrono>
@@ -82,15 +84,14 @@ double run_perf_test(const std::vector<config::CT> &data,
     out[i] = config::CT{h_data[i].real(), h_data[i].imag()};
   }
 
-  const auto time_1000 = run_fft_kernel<1000, sm_size, CT, Size, FFTExec>(
+  const auto time_100 = run_fft_kernel<100, sm_size, CT, Size, FFTExec>(
       thrust::raw_pointer_cast(d_data.data()), sm_count);
 
-  const auto time_11000 = run_fft_kernel<11000, sm_size, CT, Size, FFTExec>(
+  const auto time_1100 = run_fft_kernel<1100, sm_size, CT, Size, FFTExec>(
       thrust::raw_pointer_cast(d_data.data()), sm_count);
 
   // Will return time in microseconds
-  const double final_time =
-      static_cast<double>(time_11000 - time_1000) / 10000.0;
+  const double final_time = static_cast<double>(time_1100 - time_100) / 1000.0;
 
   return final_time;
 }
