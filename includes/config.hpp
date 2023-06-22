@@ -5,10 +5,9 @@ namespace config {
 
 using CT = thrust::complex<double>;
 
-constexpr int radix = 8;
-constexpr int N = radix * radix;
+constexpr int N = 64;
 
 constexpr bool print_results = false;
-constexpr int sm_multiplier = 100;
+constexpr int sm_multiplier = 128;
 
 } // namespace config

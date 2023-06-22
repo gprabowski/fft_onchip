@@ -16,7 +16,8 @@ int main() {
 
   // generate data
   std::transform(begin(data), end(data), begin(data), [&](auto) {
-    return CT{dist(rd), dist(rd)};
+    return CT{10, 10};
+    // return CT{dist(rd), dist(rd)};
   });
 
   // compare correctness
