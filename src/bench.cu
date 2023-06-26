@@ -2,8 +2,8 @@
 #include <random>
 #include <vector>
 
+#include <bench.cuh>
 #include <config.hpp>
-#include <perf_test.cuh>
 
 int main() {
   using config::CT;
@@ -20,5 +20,5 @@ int main() {
   });
 
   // compare correctness
-  testing::test(data);
+  bench::test(data);
 }

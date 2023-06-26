@@ -14,8 +14,9 @@ template <int FftSize> struct reference_fft {
 
   using VT = typename FFT::value_type;
   static constexpr auto threads = FFT::block_dim.x;
-  static constexpr auto ffts_per_block = FFT::ffts_per_block;
+  static constexpr auto units_per_block = FFT::ffts_per_block;
   static constexpr auto ffts_per_unit = 1;
+  static constexpr auto max_threads_per_block = FFT::max_threads_per_block;
 
   VT *sh_d;
   __device__ reference_fft(VT *d) : sh_d(d) {}

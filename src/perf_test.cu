@@ -13,51 +13,15 @@
 #include <tensor_fft_4096.cuh>
 #include <tensor_fft_64.cuh>
 #include <tensor_fft_8.cuh>
-#include <tester.cuh>
+#include <testing.cuh>
 
 #include <chrono>
 
 namespace testing {
 
-template <int InnerRuns, int SharedSize, typename CT, int Size,
-          typename FFTExec>
-__forceinline__ double run_fft_kernel(CT *data, size_t sm_count) {
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
-  constexpr auto FinalShared =
-      SharedSize * FFTExec::ffts_per_block * FFTExec::ffts_per_unit;
-
-  gpuErrchk(cudaFuncSetAttribute(
-      tester::fft_tester<InnerRuns, CT, FFTExec, Size, FFTExec::ffts_per_block>,
-      cudaFuncAttributeMaxDynamicSharedMemorySize, FinalShared));
-
-  gpuErrchk(cudaEventRecord(start));
-  // Running around 100 blocks / SM
-  tester::fft_tester<InnerRuns, CT, FFTExec, Size, FFTExec::ffts_per_block>
-      <<<(config::sm_multiplier * sm_count) /
-             (FFTExec::ffts_per_block * FFTExec::ffts_per_unit),
-         dim3(FFTExec::threads, FFTExec::ffts_per_block, 1), FinalShared>>>(
-          thrust::raw_pointer_cast(data));
-  gpuErrchk(cudaEventRecord(stop));
-  gpuErrchk(cudaPeekAtLastError());
-  gpuErrchk(cudaDeviceSynchronize());
-
-  float time_elapsed;
-  cudaEventElapsedTime(&time_elapsed, start, stop);
-
-  // return microseconds
-  return time_elapsed * 1000.f;
-}
-
 template <typename CT, int Size, typename FFTExec>
-double run_perf_test(const std::vector<config::CT> &data,
-                     std::vector<config::CT> &out) {
-  cudaEvent_t start, stop;
-  cudaEventCreate(&start);
-  cudaEventCreate(&stop);
-
+double run_tests(const std::vector<config::CT> &data,
+                 std::vector<config::CT> &out) {
   // get number of SMs
   cudaDeviceProp props;
   cudaGetDeviceProperties(&props, 0);
@@ -75,8 +39,8 @@ double run_perf_test(const std::vector<config::CT> &data,
   constexpr auto sm_size = Size * sizeof(CT);
 
   // correctness check
-  run_fft_kernel<1, sm_size, CT, Size, FFTExec>(
-      thrust::raw_pointer_cast(d_data.data()), sm_count);
+  run_fft_kernel<CT, Size, FFTExec>(
+      1, sm_size, thrust::raw_pointer_cast(d_data.data()), sm_count);
 
   h_data = d_data;
   out.resize(h_data.size());
@@ -84,32 +48,23 @@ double run_perf_test(const std::vector<config::CT> &data,
     out[i] = config::CT{h_data[i].real(), h_data[i].imag()};
   }
 
-  const auto time_100 = run_fft_kernel<100, sm_size, CT, Size, FFTExec>(
-      thrust::raw_pointer_cast(d_data.data()), sm_count);
-
-  const auto time_1100 = run_fft_kernel<1100, sm_size, CT, Size, FFTExec>(
-      thrust::raw_pointer_cast(d_data.data()), sm_count);
-
-  // Will return time in microseconds
-  const double final_time = static_cast<double>(time_1100 - time_100) / 1000.0;
-
-  return final_time;
+  return run_perf_tests<CT, Size, FFTExec>(data);
 }
 
 void test(std::vector<config::CT> &data) {
   std::vector<config::CT> out_algorithm, out_reference;
 
-  using customExec = fft::tensor_fft_64<config::CT, config::N>;
+  using customExec = fft::tensor_fft_64<config::CT, config::N, 4, 2>;
   using refExec = fft::reference_fft<config::N>;
 
   auto alg_data = data;
   auto ref_data = data;
 
   const auto alg_run =
-      run_perf_test<config::CT, config::N, customExec>(alg_data, out_algorithm);
+      run_tests<config::CT, config::N, customExec>(alg_data, out_algorithm);
 
   const auto ref_run =
-      run_perf_test<refExec::VT, config::N, refExec>(ref_data, out_reference);
+      run_tests<refExec::VT, config::N, refExec>(ref_data, out_reference);
 
   double mse{0.0};
 

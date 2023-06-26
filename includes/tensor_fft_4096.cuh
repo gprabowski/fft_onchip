@@ -14,8 +14,9 @@ template <typename CT, int Size> struct tensor_fft_4096 {
 
   static constexpr auto num_warps = 8;
   static constexpr auto threads = num_warps * 32;
-  static constexpr auto ffts_per_block = 1;
+  static constexpr auto units_per_block = 1;
   static constexpr auto ffts_per_unit = 1;
+  static constexpr auto max_threads_per_block = units_per_block * threads;
 
   static_assert(Size == 4096, "SIZE MUST BE 4096");
 

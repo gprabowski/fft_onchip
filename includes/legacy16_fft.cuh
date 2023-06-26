@@ -20,8 +20,9 @@ template <typename CT, int Size> struct legacy16_fft {
   static constexpr auto BlockSize = Size / 16;
   static constexpr auto threads = BlockSize;
   static constexpr int depth = static_log3<Size, 16>();
-  static constexpr auto ffts_per_block = 1;
+  static constexpr auto units_per_block = 1;
   static constexpr auto ffts_per_unit = 1;
+  static constexpr auto max_threads_per_block = units_per_block * threads;
 
   const int tid = threadIdx.x;
   const int warpIdx = tid / 32;

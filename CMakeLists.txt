@@ -21,9 +21,10 @@ add_executable(gpu_fft
 target_include_directories(gpu_fft PUBLIC includes/)
 target_include_directories(gpu_fft PUBLIC thirdparty/cutlass/include)
 target_link_libraries(gpu_fft mathdx::cufftdx)
-
 target_link_libraries(gpu_fft CUDA::cufft CUDA::cudart)
-
 target_compile_options(gpu_fft PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:
-                       --generate-line-info
-                       >)
+                       --generate-line-info>)
+
+add_executable(bench_fft src/bench.cu)
+target_include_directories(bench_fft PUBLIC includes/)
+target_link_libraries(bench_fft mathdx::cufftdx)
