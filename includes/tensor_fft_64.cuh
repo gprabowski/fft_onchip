@@ -24,6 +24,8 @@ struct tensor_fft_64 {
   const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
   const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
 
+  static constexpr char print_type[] = "MMA64";
+
   static_assert(Size == 64, "SIZE MUST BE 64");
 
   template <int N> inline __device__ CT pow_theta(int p) const {

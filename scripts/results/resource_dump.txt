@@ -1,0 +1,56 @@
+
+Fatbin ptx code:
+================
+arch = sm_80
+code version = [8,1]
+host = linux
+compile_size = 64bit
+compressed
+identifier = /home/pg/code/fft_onchip/src/perf_test.cu
+ptxasOptions =  --generate-line-info 
+
+Fatbin elf code:
+================
+arch = sm_80
+code version = [1,7]
+host = linux
+compile_size = 64bit
+identifier = /home/pg/code/fft_onchip/src/perf_test.cu
+
+Resource usage:
+ Common:
+  GLOBAL:700155
+ Function _ZN7testing10fft_testerIN7cufftdx6detail7complexIdEEN3fft13reference_fftILi64EEELi64ELi16EEEviPT_b:
+  REG:96 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:369 CONSTANT[2]:16 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN7testing10fft_testerIN6thrust7complexIdEEN3fft13tensor_fft_64IS3_Li64ELi4ELi2EEELi64ELi4EEEviPT_b:
+  REG:54 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:369 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN3cub11EmptyKernelIvEEvv:
+  REG:4 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:352 TEXTURE:0 SURFACE:0 SAMPLER:0
+
+Fatbin ptx code:
+================
+arch = sm_80
+code version = [8,1]
+host = linux
+compile_size = 64bit
+compressed
+identifier = /home/pg/code/fft_onchip/src/gpu_fft.cu
+ptxasOptions =  --generate-line-info 
+
+Fatbin elf code:
+================
+arch = sm_80
+code version = [1,7]
+host = linux
+compile_size = 64bit
+identifier = /home/pg/code/fft_onchip/src/gpu_fft.cu
+
+Resource usage:
+ Common:
+  GLOBAL:700131
+ Function _ZN7testing10fft_testerIN7cufftdx6detail7complexIdEEN3fft13reference_fftILi64EEELi64ELi16EEEviPT_b:
+  REG:96 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:369 CONSTANT[2]:16 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN7testing10fft_testerIN6thrust7complexIdEEN3fft13tensor_fft_64IS3_Li64ELi4ELi2EEELi64ELi4EEEviPT_b:
+  REG:54 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:369 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN3cub11EmptyKernelIvEEvv:
+  REG:4 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:352 TEXTURE:0 SURFACE:0 SAMPLER:0

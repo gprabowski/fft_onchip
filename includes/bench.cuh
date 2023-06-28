@@ -1,13 +1,23 @@
 #pragma once
-#include <vector>
 #include <config.hpp>
-#include <tensor_fft_64.cuh>
-#include <reference.cuh>
-#include <testing.cuh>
 #include <generated_tests.cuh>
+#include <reference.cuh>
+#include <tensor_fft_64.cuh>
+#include <testing.cuh>
+#include <vector>
 
 namespace bench {
 void test(const std::vector<config::CT> &data) {
-    using baseline = fft::reference_fft<config::N>;
-    testing::perf_test_printer<baseline::VT, config::N, baseline>(data);
-test0(data);test1(data);test2(data);test3(data);test4(data);test5(data);test6(data);}}
+  using baseline = fft::reference_fft<config::N>;
+  std::cout << "Type, FFTs per Unit, Units per Block, Time[microseconds]"
+            << std::endl;
+  testing::perf_test_printer<baseline::VT, config::N, baseline>(data);
+  test0(data);
+  test1(data);
+  test2(data);
+  test3(data);
+  test4(data);
+  test5(data);
+  test6(data);
+}
+} // namespace bench

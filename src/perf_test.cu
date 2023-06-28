@@ -19,38 +19,6 @@
 
 namespace testing {
 
-template <typename CT, int Size, typename FFTExec>
-double run_tests(const std::vector<config::CT> &data,
-                 std::vector<config::CT> &out) {
-  // get number of SMs
-  cudaDeviceProp props;
-  cudaGetDeviceProperties(&props, 0);
-  const auto sm_count = props.multiProcessorCount;
-
-  thrust::host_vector<CT> h_data;
-  thrust::device_vector<CT> d_data;
-
-  for (int i = 0; i < data.size() * config::sm_multiplier * sm_count; ++i) {
-    h_data.push_back({data[i % Size].real(), data[i % Size].imag()});
-  }
-
-  d_data = h_data;
-
-  constexpr auto sm_size = Size * sizeof(CT);
-
-  // correctness check
-  run_fft_kernel<CT, Size, FFTExec>(
-      1, sm_size, thrust::raw_pointer_cast(d_data.data()), sm_count);
-
-  h_data = d_data;
-  out.resize(h_data.size());
-  for (int i = 0; i < h_data.size(); ++i) {
-    out[i] = config::CT{h_data[i].real(), h_data[i].imag()};
-  }
-
-  return run_perf_tests<CT, Size, FFTExec>(data);
-}
-
 void test(std::vector<config::CT> &data) {
   std::vector<config::CT> out_algorithm, out_reference;
 
@@ -61,10 +29,11 @@ void test(std::vector<config::CT> &data) {
   auto ref_data = data;
 
   const auto alg_run =
-      run_tests<config::CT, config::N, customExec>(alg_data, out_algorithm);
+      run_perf_and_corr_tests<config::CT, config::N, customExec>(alg_data,
+                                                                 out_algorithm);
 
-  const auto ref_run =
-      run_tests<refExec::VT, config::N, refExec>(ref_data, out_reference);
+  const auto ref_run = run_perf_and_corr_tests<refExec::VT, config::N, refExec>(
+      ref_data, out_reference);
 
   double mse{0.0};
 

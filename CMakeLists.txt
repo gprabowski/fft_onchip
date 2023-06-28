@@ -16,7 +16,7 @@ find_package(mathdx REQUIRED COMPONENTS cufftdx CONFIG)
 
 add_executable(gpu_fft 
     src/perf_test.cu
-    src/main.cpp)
+    src/gpu_fft.cu)
 
 target_include_directories(gpu_fft PUBLIC includes/)
 target_include_directories(gpu_fft PUBLIC thirdparty/cutlass/include)
@@ -31,3 +31,7 @@ file(GLOB BENCH_SOURCES ${PROJECT_SOURCE_DIR}/src/bench/*.cu)
 add_executable(bench_fft ${BENCH_SOURCES} src/bench.cu)
 target_include_directories(bench_fft PUBLIC includes/)
 target_link_libraries(bench_fft mathdx::cufftdx)
+
+add_executable(saturation_fft src/saturation.cu)
+target_include_directories(saturation_fft PUBLIC includes/)
+target_link_libraries(saturation_fft mathdx::cufftdx)
