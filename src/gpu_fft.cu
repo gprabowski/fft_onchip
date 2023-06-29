@@ -8,6 +8,7 @@
 #include <common.cuh>
 #include <reference.cuh>
 #include <tensor_fft_64.cuh>
+#include <tensor_fft_8.cuh>
 #include <testing.cuh>
 
 int main() {
@@ -25,29 +26,18 @@ int main() {
   });
 
   // compare correctness
-  std::vector<config::CT> out_algorithm, out_reference;
+  std::vector<config::CT> out_algorithm(N), out_reference(N);
 
-  using customExec = fft::tensor_fft_64<config::CT, config::N, 4, 2>;
-  using refExec = fft::reference_fft<config::N>;
-
-  auto alg_data = data;
-  auto ref_data = data;
+  using customExec = fft::tensor_fft_64<config::CT, N>;
+  using refExec = fft::reference_fft<N>;
 
   const auto alg_run_transfers =
-      testing::run_perf_and_corr_tests<config::CT, config::N, customExec, true>(
-          alg_data, out_algorithm);
-
-  const auto alg_run_no_transfers =
-      testing::run_perf_and_corr_tests<config::CT, config::N, customExec,
-                                       false>(alg_data, out_algorithm);
+      testing::run_perf_and_corr_tests<config::CT, N, customExec, true>(
+          data, out_algorithm);
 
   const auto ref_run_transfers =
-      testing::run_perf_and_corr_tests<refExec::VT, config::N, refExec, true>(
-          ref_data, out_reference);
-
-  const auto ref_run_no_transfers =
-      testing::run_perf_and_corr_tests<refExec::VT, config::N, refExec, false>(
-          ref_data, out_reference);
+      testing::run_perf_and_corr_tests<refExec::VT, N, refExec, true>(
+          data, out_reference);
 
   double mse{0.0};
 
@@ -55,6 +45,12 @@ int main() {
     const auto se = norm(out_reference[i] - out_algorithm[i]);
     mse += se;
   }
+  const auto ref_run_no_transfers =
+      testing::run_perf_and_corr_tests<refExec::VT, N, refExec, false>(
+          data, out_reference);
+  const auto alg_run_no_transfers =
+      testing::run_perf_and_corr_tests<config::CT, N, customExec, false>(
+          data, out_algorithm);
 
   if constexpr (config::print_results) {
     for (int i = 0; i < data.size() * 16; ++i) {

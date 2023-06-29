@@ -23,7 +23,6 @@ int main() {
   });
 
   // compare correctness
-  using customExec = fft::tensor_fft_64<config::CT, config::N, 4, 2>;
   using refExec = fft::reference_fft<config::N>;
 
   auto alg_data = data;
@@ -33,12 +32,14 @@ int main() {
 
   std::cout << "Blocks/SM, Time Tensor, Time cuFFTDx" << std::endl;
 
-  for (int i = 1; i < 256; i += 2) {
-    const auto alg_run =
-        testing::run_perf_tests<config::CT, config::N, customExec>(alg_data, i);
+  for (int i = 16; i <= 256; i += 16) {
+    auto alg_run =
+        testing::run_perf_tests<config::CT, config::N,
+                                fft::tensor_fft_64<config::CT, config::N>>(data,
+                                                                           i);
 
-    const auto ref_run =
-        testing::run_perf_tests<refExec::VT, config::N, refExec>(ref_data, i);
+    auto ref_run =
+        testing::run_perf_tests<refExec::VT, config::N, refExec>(data, i);
 
     std::cout << i << "," << alg_run << "," << ref_run << std::endl;
   }

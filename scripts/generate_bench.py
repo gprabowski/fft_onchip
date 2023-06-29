@@ -20,7 +20,9 @@ header_preambule = """#pragma once
 namespace bench {
 void test(const std::vector<config::CT> &data) {
     using baseline = fft::reference_fft<config::N>;
-    testing::perf_test_printer<baseline::VT, config::N, baseline>(data);
+    for(int i = 0; i < 100; ++i) {
+        testing::perf_test_printer<baseline::VT, config::N, baseline>(data);
+    }
 """
 
 src_preambule = """

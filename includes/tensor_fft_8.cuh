@@ -17,6 +17,8 @@ template <typename CT, int Size> struct tensor_fft_8 {
   static constexpr auto ffts_per_unit = 32;
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
+  static constexpr char print_type[] = "MMA8";
+
   static_assert(Size == 8, "SIZE MUST BE 8");
 
   template <int N> inline __device__ CT pow_theta(int p) const {

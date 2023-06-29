@@ -9,7 +9,7 @@ namespace fft {
 
 namespace cg = cooperative_groups;
 
-template <typename CT, int Size, int UPB = 1, int FPU = 1>
+template <typename CT, int Size, int UPB = 16, int FPU = 1>
 struct tensor_fft_64 {
   using this_t = tensor_fft_64<CT, Size>;
 
