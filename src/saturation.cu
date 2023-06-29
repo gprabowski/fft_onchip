@@ -30,9 +30,14 @@ int main() {
 
   std::vector<config::CT> mock_out;
 
+  // Clock warmup
+  for (int i = 0; i < 100; ++i) {
+    testing::run_perf_tests<refExec::VT, config::N, refExec>(data);
+  }
+
   std::cout << "Blocks/SM, Time Tensor, Time cuFFTDx" << std::endl;
 
-  for (int i = 16; i <= 256; i += 16) {
+  for (int i = 4; i <= 128; i += 4) {
     auto alg_run =
         testing::run_perf_tests<config::CT, config::N,
                                 fft::tensor_fft_64<config::CT, config::N>>(data,
