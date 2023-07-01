@@ -23,6 +23,7 @@ __launch_bounds__(FFTExec::max_threads_per_block) __global__
 
   auto grid = cg::this_grid();
   auto block = cg::this_thread_block();
+  auto group64 = cg::tiled_partition<64u>(block);
 
   // 1. copy data
   if (with_transfers) {
@@ -33,6 +34,8 @@ __launch_bounds__(FFTExec::max_threads_per_block) __global__
                          FFTExec::ffts_per_unit);
     cg::wait(block);
   }
+
+  block.sync();
 
   FFTExec fft(shared_data);
 #pragma unroll 1

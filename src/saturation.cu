@@ -6,7 +6,7 @@
 #include <testing.cuh>
 
 #include <reference.cuh>
-#include <tensor_fft_64.cuh>
+#include <tensor_fft_128.cuh>
 
 int main() {
   using config::CT;
@@ -40,8 +40,8 @@ int main() {
   for (int i = 4; i <= 128; i += 4) {
     auto alg_run =
         testing::run_perf_tests<config::CT, config::N,
-                                fft::tensor_fft_64<config::CT, config::N>>(data,
-                                                                           i);
+                                fft::tensor_fft_128<config::CT, config::N>>(
+            data, i);
 
     auto ref_run =
         testing::run_perf_tests<refExec::VT, config::N, refExec>(data, i);

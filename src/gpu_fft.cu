@@ -7,8 +7,7 @@
 
 #include <common.cuh>
 #include <reference.cuh>
-#include <tensor_fft_64.cuh>
-#include <tensor_fft_8.cuh>
+#include <tensor_fft_128.cuh>
 #include <testing.cuh>
 
 int main() {
@@ -28,7 +27,7 @@ int main() {
   // compare correctness
   std::vector<config::CT> out_algorithm(N), out_reference(N);
 
-  using customExec = fft::tensor_fft_64<config::CT, N>;
+  using customExec = fft::tensor_fft_128<config::CT, N>;
   using refExec = fft::reference_fft<N>;
 
   const auto alg_run_transfers =
@@ -45,6 +44,7 @@ int main() {
     const auto se = norm(out_reference[i] - out_algorithm[i]);
     mse += se;
   }
+
   const auto ref_run_no_transfers =
       testing::run_perf_and_corr_tests<refExec::VT, N, refExec, false>(
           data, out_reference);
