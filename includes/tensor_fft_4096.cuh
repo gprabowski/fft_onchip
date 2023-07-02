@@ -19,6 +19,8 @@ struct tensor_fft_4096 {
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
   mma_fp64_884_indexes indexing;
+  const int b_row_idx = indexing.brow * 8 + indexing.bcol;
+  const int c_row_idx = indexing.crow * 8 + indexing.ccol;
 
   const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
   const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
@@ -57,8 +59,6 @@ struct tensor_fft_4096 {
     // set in memory in a column major fashion)
 
     for (int i = warp.meta_group_rank(); i < 64; i += warp.meta_group_size()) {
-      const auto b_row_idx = indexing.brow * 8 + indexing.bcol;
-      const auto c_row_idx = indexing.crow * 8 + indexing.ccol;
 
       b1 = sh_d[i + b_row_idx * 64];
       b2 = sh_d[i + (b_row_idx + 32) * 64];
@@ -77,8 +77,6 @@ struct tensor_fft_4096 {
 
     // 5. load and twiddle
     for (int i = warp.meta_group_rank(); i < 64; i += warp.meta_group_size()) {
-      const auto b_row_idx = indexing.brow * 8 + indexing.bcol;
-
       const auto twiddle_3 = pow_theta<4096>(i * b_row_idx);
       const auto twiddle_4 = pow_theta<4096>(i * (b_row_idx + 32));
       const auto reg_idx = 2 * (i / warp.meta_group_size());
@@ -95,8 +93,6 @@ struct tensor_fft_4096 {
     block.sync();
 
     for (int i = warp.meta_group_rank(); i < 64; i += warp.meta_group_size()) {
-      const auto c_row_idx = indexing.crow * 8 + indexing.ccol;
-
       const auto reg_idx = 2 * (i / warp.meta_group_size());
       sh_d[i + c_row_idx * 64] = local_b[reg_idx];
       sh_d[i + (c_row_idx + 1) * 64] = local_b[reg_idx + 1];

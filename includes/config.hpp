@@ -5,9 +5,7 @@ namespace config {
 
 using CT = thrust::complex<double>;
 
-constexpr int N = 64 * 64;
-
-constexpr bool print_results = true;
-constexpr int sm_multiplier = 1;
+constexpr bool print_results = false;
+constexpr int sm_multiplier = 32;
 
 } // namespace config

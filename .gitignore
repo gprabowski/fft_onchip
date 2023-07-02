@@ -1,4 +1,8 @@
 build/
 .cache/
 thirdparty/mathdx
-
+includes/bench/*
+!includes/bench/.gitkeep
+src/bench/*
+!src/bench/.gitkeep
+includes/bench.cuh

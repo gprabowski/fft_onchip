@@ -14,7 +14,7 @@
 
 int main() {
   using config::CT;
-  using config::N;
+  constexpr auto N = 4096;
 
   std::random_device rd;
   std::uniform_real_distribution<float> dist(0.0, 1.0);

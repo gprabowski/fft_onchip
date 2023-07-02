@@ -6,11 +6,11 @@
 #include <testing.cuh>
 
 #include <reference.cuh>
-#include <tensor_fft_128.cuh>
+#include <tensor_fft_4096.cuh>
 
 int main() {
   using config::CT;
-  using config::N;
+  constexpr auto N = 4096;
 
   std::random_device rd;
   std::uniform_real_distribution<float> dist(0.0, 1.0);
@@ -23,7 +23,7 @@ int main() {
   });
 
   // compare correctness
-  using refExec = fft::reference_fft<config::N>;
+  using refExec = fft::reference_fft<N>;
 
   auto alg_data = data;
   auto ref_data = data;
@@ -32,19 +32,17 @@ int main() {
 
   // Clock warmup
   for (int i = 0; i < 100; ++i) {
-    testing::run_perf_tests<refExec::VT, config::N, refExec>(data);
+    testing::run_perf_tests<refExec::VT, N, refExec>(data);
   }
 
   std::cout << "Blocks/SM, Time Tensor, Time cuFFTDx" << std::endl;
 
   for (int i = 4; i <= 128; i += 4) {
     auto alg_run =
-        testing::run_perf_tests<config::CT, config::N,
-                                fft::tensor_fft_128<config::CT, config::N>>(
-            data, i);
+        testing::run_perf_tests<config::CT, N,
+                                fft::tensor_fft_4096<config::CT, N>>(data, i);
 
-    auto ref_run =
-        testing::run_perf_tests<refExec::VT, config::N, refExec>(data, i);
+    auto ref_run = testing::run_perf_tests<refExec::VT, N, refExec>(data, i);
 
     std::cout << i << "," << alg_run << "," << ref_run << std::endl;
   }

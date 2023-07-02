@@ -129,14 +129,18 @@ double run_perf_tests(const std::vector<config::CT> &data,
   return final_time;
 }
 
-template <typename CT, int Size, typename FFTExec>
+template <typename CT, int Size, typename FFTExec, bool PrintRes = true>
 auto perf_test_printer(const std::vector<config::CT> &data,
                        int block_multiplier = config::sm_multiplier) {
   const auto t =
       testing::run_perf_tests<CT, Size, FFTExec>(data, block_multiplier);
   // Print name and then after comma print result
-  std::cout << FFTExec::print_type << "," << FFTExec::ffts_per_unit << ","
-            << FFTExec::units_per_block << "," << t << std::endl;
+  if (t > 0.0 && PrintRes) {
+    std::cout << FFTExec::print_type << "," << Size << ","
+              << FFTExec::ffts_per_unit << "," << FFTExec::units_per_block
+              << "," << t << std::endl;
+  }
+
   return t;
 }
 
