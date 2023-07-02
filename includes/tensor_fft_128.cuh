@@ -83,7 +83,7 @@ struct tensor_fft_128 {
                                  twiddle1, twiddle2, indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
 
-      fft_group.sync();
+      block.sync();
       // 4. Save intermediate results to memory in correct order
       local_data[i * Size + indexing.crow * 16 + indexing.ccol * 2] =
           local_b[2 * i];
@@ -91,14 +91,14 @@ struct tensor_fft_128 {
           local_b[2 * i + 1];
 
       local_data -= warp_local_idx;
-      fft_group.sync();
+      block.sync();
 
       // 5. perform radix-2 stage
       local_b[2 * i] = local_data[i * Size + 2 * fft_group.thread_rank()];
       local_b[2 * i + 1] =
           local_data[i * Size + 2 * fft_group.thread_rank() + 1];
 
-      fft_group.sync();
+      block.sync();
 
       const auto tmp = local_b[2 * i + 1] * twiddle4;
       local_b[2 * i + 1] = local_b[2 * i] - tmp;
