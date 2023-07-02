@@ -9,14 +9,24 @@ namespace fft {
 
 namespace cg = cooperative_groups;
 
-template <typename CT, int Size> struct tensor_fft_4096 {
+template <typename CT, int Size, int UPB = 1, int FPU = 1>
+struct tensor_fft_4096 {
   using this_t = tensor_fft_4096<CT, Size>;
 
-  static constexpr auto num_warps = 8;
-  static constexpr auto threads = num_warps * 32;
-  static constexpr auto units_per_block = 1;
-  static constexpr auto ffts_per_unit = 1;
+  static constexpr auto threads = 512;
+  static constexpr auto units_per_block = UPB;
+  static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
+
+  mma_fp64_884_indexes indexing;
+
+  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
+  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
+
+  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
+  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+
+  static constexpr char print_type[] = "MMA4096";
 
   static_assert(Size == 4096, "SIZE MUST BE 4096");
 
@@ -33,51 +43,64 @@ template <typename CT, int Size> struct tensor_fft_4096 {
   __device__ tensor_fft_4096(CT *d) : sh_d(d) {}
 
   __device__ void operator()() {
-    // THIS KERNEL WAS CREATED FOR PROFILING PURPOSES
-    // AND DOES NOT COMPUTE A CORRECT FFT
     const auto grid = cg::this_grid();
     const auto block = cg::this_thread_block();
     const auto warp = cg::tiled_partition<32>(block);
 
-    auto local_data =
-        (sh_d + Size * ffts_per_unit * (block.thread_rank() / threads));
+    // local storage for all FFT elements
+    CT b1, b2;
+    CT local_b[4096 / threads];
 
-    mma_fp64_884_indexes indexing;
+    // 0. Prepare mma and transpose indices
+    // 1. Pre-load b for 1st iter
+    // in here we tranpose the matrix (as its naturally
+    // set in memory in a column major fashion)
 
-    auto b1 = CT{};
-    auto b2 = CT{};
+    for (int i = warp.meta_group_rank(); i < 64; i += warp.meta_group_size()) {
+      const auto b_row_idx = indexing.brow * 8 + indexing.bcol;
+      const auto c_row_idx = indexing.crow * 8 + indexing.ccol;
 
-    const CT a1 = CT{};
-    const CT a2 = CT{};
+      b1 = sh_d[i + b_row_idx * 64];
+      b2 = sh_d[i + (b_row_idx + 32) * 64];
 
-    double s11, s12, s21, s22, s31, s32;
+      // 3. Compute FFT on 64 elements
+      fft_kernels::c64_fft64<CT>(a1, a2, b1, b2, twiddle1, twiddle2,
+                                 indexing.transpose_lane_b1,
+                                 indexing.transpose_lane_b2);
 
-    // Simulate Row FFT
-#pragma unroll
-    for (int i = 0; i < 64; i += num_warps) {
-      // to perform a 64 element fft we need a column and row fft of size 8
-      // that's why two here
-      karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
-      karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
+      // 4. Save intermediate results to memory in correct order
+      sh_d[i + c_row_idx * 64] = b1;
+      sh_d[i + (c_row_idx + 1) * 64] = b2;
     }
 
-    // Transpose
     block.sync();
 
-#pragma unroll
-    // Simulate Column fft
-    for (int i = 0; i < 64; i += num_warps) {
-      // to perform a 64 element fft we need a column and row fft of size 8
-      // that's why two here
-      karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
-      karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
+    // 5. load and twiddle
+    for (int i = warp.meta_group_rank(); i < 64; i += warp.meta_group_size()) {
+      const auto b_row_idx = indexing.brow * 8 + indexing.bcol;
+
+      const auto twiddle_3 = pow_theta<4096>(i * b_row_idx);
+      const auto twiddle_4 = pow_theta<4096>(i * (b_row_idx + 32));
+      const auto reg_idx = 2 * (i / warp.meta_group_size());
+
+      local_b[reg_idx] = twiddle_3 * sh_d[i * 64 + b_row_idx];
+      local_b[reg_idx + 1] = twiddle_4 * sh_d[i * 64 + (b_row_idx + 32)];
+
+      // 3. Compute FFT on 64 elements
+      fft_kernels::c64_fft64<CT>(a1, a2, local_b[reg_idx], local_b[reg_idx + 1],
+                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
+                                 indexing.transpose_lane_b2);
     }
 
-    b1 = CT{s11 - s21, s31 - s21 - s11};
-    b2 = CT{s12 - s22, s32 - s22 - s12};
+    block.sync();
 
-    local_data[indexing.crow * 8 + indexing.ccol] = b1;
-    local_data[indexing.crow * 8 + (indexing.ccol + 1)] = b2;
+    for (int i = warp.meta_group_rank(); i < 64; i += warp.meta_group_size()) {
+      const auto c_row_idx = indexing.crow * 8 + indexing.ccol;
+
+      const auto reg_idx = 2 * (i / warp.meta_group_size());
+      sh_d[i + c_row_idx * 64] = local_b[reg_idx];
+      sh_d[i + (c_row_idx + 1) * 64] = local_b[reg_idx + 1];
+    }
   }
 };
 } // namespace fft
