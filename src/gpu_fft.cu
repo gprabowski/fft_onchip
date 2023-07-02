@@ -8,6 +8,7 @@
 #include <common.cuh>
 #include <reference.cuh>
 #include <tensor_fft_128.cuh>
+#include <tensor_fft_256.cuh>
 #include <testing.cuh>
 
 int main() {
@@ -27,7 +28,7 @@ int main() {
   // compare correctness
   std::vector<config::CT> out_algorithm(N), out_reference(N);
 
-  using customExec = fft::tensor_fft_128<config::CT, N>;
+  using customExec = fft::tensor_fft_256<config::CT, N>;
   using refExec = fft::reference_fft<N>;
 
   const auto alg_run_transfers =
@@ -45,21 +46,21 @@ int main() {
     mse += se;
   }
 
-  const auto ref_run_no_transfers =
-      testing::run_perf_and_corr_tests<refExec::VT, N, refExec, false>(
-          data, out_reference);
-  const auto alg_run_no_transfers =
-      testing::run_perf_and_corr_tests<config::CT, N, customExec, false>(
-          data, out_algorithm);
-
   if constexpr (config::print_results) {
-    for (int i = 0; i < data.size() * 16; ++i) {
+    for (int i = 0; i < data.size(); ++i) {
       std::cout << " Ref: " << out_reference[i].real() << " "
                 << out_reference[i].imag()
                 << " Ten: " << out_algorithm[i].real() << " "
                 << out_algorithm[i].imag() << std::endl;
     }
   }
+
+  const auto ref_run_no_transfers =
+      testing::run_perf_and_corr_tests<refExec::VT, N, refExec, false>(
+          data, out_reference);
+  const auto alg_run_no_transfers =
+      testing::run_perf_and_corr_tests<config::CT, N, customExec, false>(
+          data, out_algorithm);
 
   mse /= data.size();
 
