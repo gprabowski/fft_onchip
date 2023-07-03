@@ -2,12 +2,9 @@
 
 #include <c64_fft64.cuh>
 #include <common.cuh>
-#include <cooperative_groups.h>
 #include <tensor_utils.cuh>
 
 namespace fft {
-
-namespace cg = cooperative_groups;
 
 template <typename CT, int Size, int UPB = 4, int FPU = 1>
 struct tensor_fft_256 {
@@ -43,14 +40,14 @@ struct tensor_fft_256 {
   __device__ tensor_fft_256(CT *d) : sh_d(d) {}
 
   __device__ void operator()() {
-    const auto grid = cg::this_grid();
-    const auto block = cg::this_thread_block();
-    const auto warp = cg::tiled_partition<32>(block);
 
     // local storage for all FFT elements
     CT local_b[8 * ffts_per_unit];
 
-    auto local_data = sh_d + Size * ffts_per_unit * (warp.meta_group_rank());
+    auto local_data =
+        sh_d +
+        Size * ffts_per_unit * ((threadIdx.x + blockDim.x * threadIdx.y) / 32);
+
     const auto output_idx = indexing.crow * 8 + indexing.ccol;
 
     // 0. Prepare mma and transpose indices
@@ -58,50 +55,31 @@ struct tensor_fft_256 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 32 + indexing.bcol * 4];
-    local_b[1] = local_data[(indexing.brow + 4) * 32 + indexing.bcol * 4];
 
-    local_b[2] = local_data[1 + indexing.brow * 32 + indexing.bcol * 4];
-    local_b[3] = local_data[1 + (indexing.brow + 4) * 32 + indexing.bcol * 4];
-
-    local_b[4] = local_data[2 + indexing.brow * 32 + indexing.bcol * 4];
-    local_b[5] = local_data[2 + (indexing.brow + 4) * 32 + indexing.bcol * 4];
-
-    local_b[6] = local_data[3 + indexing.brow * 32 + indexing.bcol * 4];
-    local_b[7] = local_data[3 + (indexing.brow + 4) * 32 + indexing.bcol * 4];
+    const auto bpos = indexing.brow * 32 + indexing.bcol * 4;
+    const auto tm8 = threadIdx.x % 8;
 
     for (int i = 0; i < ffts_per_unit; ++i) {
-      // 2. Pre-load B elements for next iteration
-      if (i < ffts_per_unit - 1) {
-        local_b[8 * (i + 1)] =
-            local_data[(i + 1) * Size + indexing.brow * 32 + indexing.bcol * 4];
-        local_b[8 * (i + 1) + 1] =
-            local_data[(i + 1) * Size + (indexing.brow + 4) * 32 +
-                       indexing.bcol * 4];
-
-        local_b[8 * (i + 1) + 2] =
-            local_data[(i + 1) * Size + 1 + indexing.brow * 32 +
-                       indexing.bcol * 4];
-        local_b[8 * (i + 1) + 3] =
-            local_data[(i + 1) * Size + 1 + (indexing.brow + 4) * 32 +
-                       indexing.bcol * 4];
-
-        local_b[8 * (i + 1) + 4] =
-            local_data[(i + 1) * Size + 2 + indexing.brow * 32 +
-                       indexing.bcol * 4];
-        local_b[8 * (i + 1) + 5] =
-            local_data[(i + 1) * Size + 2 + (indexing.brow + 4) * 32 +
-                       indexing.bcol * 4];
-
-        local_b[8 * (i + 1) + 6] =
-            local_data[(i + 1) * Size + 3 + indexing.brow * 32 +
-                       indexing.bcol * 4];
-        local_b[8 * (i + 1) + 7] =
-            local_data[(i + 1) * Size + 3 + (indexing.brow + 4) * 32 +
-                       indexing.bcol * 4];
-      }
-
       // 3. Compute FFT on 256 elements
+      local_b[8 * i + tm8] = local_data[i * Size + tm8 / 2 + bpos];
+      local_b[8 * i + (tm8 + 1) % 8] =
+          local_data[i * Size + ((tm8 + 1) % 8) / 2 + bpos + 128];
+
+      local_b[8 * i + (tm8 + 2) % 8] =
+          local_data[i * Size + ((tm8 + 2) % 8) / 2 + bpos];
+      local_b[8 * i + (tm8 + 3) % 8] =
+          local_data[i * Size + ((tm8 + 3) % 8) / 2 + bpos + 128];
+
+      local_b[8 * i + (tm8 + 4) % 8] =
+          local_data[i * Size + ((tm8 + 4) % 8) / 2 + bpos];
+      local_b[8 * i + (tm8 + 5) % 8] =
+          local_data[i * Size + ((tm8 + 5) % 8) / 2 + bpos + 128];
+
+      local_b[8 * i + (tm8 + 6) % 8] =
+          local_data[i * Size + ((tm8 + 6) % 8) / 2 + bpos];
+      local_b[8 * i + (tm8 + 7) % 8] =
+          local_data[i * Size + ((tm8 + 7) % 8) / 2 + bpos + 128];
+
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[8 * i], local_b[8 * i + 1],
                                  twiddle1, twiddle2, indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
@@ -116,17 +94,13 @@ struct tensor_fft_256 {
                                  indexing.transpose_lane_b2);
 
       // 5. perform radix-4 stage
-      const CT twiddle5_1 = pow_theta<256>(output_idx);
-      const CT twiddle6_1 = pow_theta<256>(2 * output_idx);
-      const CT twiddle7_1 = pow_theta<256>(3 * output_idx);
+      const CT tw3 = pow_theta<256>(output_idx);
 
-      const CT twiddle5_2 = pow_theta<256>(output_idx + 1);
-      const CT twiddle6_2 = pow_theta<256>(2 * output_idx + 2);
-      const CT twiddle7_2 = pow_theta<256>(3 * output_idx + 3);
+      const CT tw4 = pow_theta<256>(output_idx + 1);
 
-      local_b[8 * i + 2] *= twiddle5_1;
-      local_b[8 * i + 4] *= twiddle6_1;
-      local_b[8 * i + 6] *= twiddle7_1;
+      local_b[8 * i + 2] *= tw3;
+      local_b[8 * i + 4] *= tw3 * tw3;
+      local_b[8 * i + 6] *= tw3 * tw3 * tw3;
 
       local_data[i * Size + output_idx] = local_b[8 * i] + local_b[8 * i + 2] +
                                           local_b[8 * i + 4] +
@@ -142,9 +116,9 @@ struct tensor_fft_256 {
           (local_b[8 * i] - local_b[8 * i + 4]) +
           CT{0, 1} * (local_b[8 * i + 2] - local_b[8 * i + 6]);
 
-      local_b[8 * i + 3] *= twiddle5_2;
-      local_b[8 * i + 5] *= twiddle6_2;
-      local_b[8 * i + 7] *= twiddle7_2;
+      local_b[8 * i + 3] *= tw4;
+      local_b[8 * i + 5] *= tw4 * tw4;
+      local_b[8 * i + 7] *= tw4 * tw4 * tw4;
 
       local_data[i * Size + output_idx + 1] =
           local_b[8 * i + 1] + local_b[8 * i + 3] + local_b[8 * i + 5] +
