@@ -42,23 +42,23 @@ template <typename CT, int Size> struct tensor_fft_8 {
         (sh_d + Size * ffts_per_unit * (block.thread_rank() / threads));
 
     // 0. Prepare mma and transpose indices
-    mma_fp64_884_indexes indexing;
+    mma_fp64_884_indexes;
 
     // 1. Fill A "Matrix" with twiddles
-    const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-    const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+    const CT a1 = pow_theta<8>(arow * acol);
+    const CT a2 = pow_theta<8>(arow * (acol + 4));
 
     for (int i = 0; i < ffts_per_unit / 8; ++i) {
       double s11{0}, s12{0}, s21{0}, s22{0}, s31{0}, s32{0};
 
-      auto b1 = local_data[i * 64 + indexing.brow + indexing.bcol * 8];
-      auto b2 = local_data[i * 64 + (indexing.brow + 4) + indexing.bcol * 8];
+      auto b1 = local_data[i * 64 + brow + bcol * 8];
+      auto b2 = local_data[i * 64 + (brow + 4) + bcol * 8];
 
       karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
 
-      local_data[i * 64 + indexing.crow + indexing.ccol * 8] =
+      local_data[i * 64 + crow + ccol * 8] =
           config::CT{s11 - s21, s31 - s21 - s11};
-      local_data[i * 64 + indexing.crow + (indexing.ccol + 1) * 8] =
+      local_data[i * 64 + crow + (ccol + 1) * 8] =
           config::CT{s12 - s22, s32 - s22 - s12};
     }
   }

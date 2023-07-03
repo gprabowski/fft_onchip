@@ -18,13 +18,13 @@ struct tensor_fft_512 {
   static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
-  mma_fp64_884_indexes indexing;
+  mma_fp64_884_indexes;
 
-  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
-  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
+  const CT twiddle1 = pow_theta<64>(crow * ccol);
+  const CT twiddle2 = pow_theta<64>(crow * (ccol + 1));
 
-  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+  const CT a1 = pow_theta<8>(arow * acol);
+  const CT a2 = pow_theta<8>(arow * (acol + 4));
 
   static constexpr char print_type[] = "MMA512";
 
@@ -62,45 +62,41 @@ struct tensor_fft_512 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 64 + indexing.bcol * 8];
-    local_b[1] = local_data[(indexing.brow + 4) * 64 + indexing.bcol * 8];
+    local_b[0] = local_data[brow * 64 + bcol * 8];
+    local_b[1] = local_data[(brow + 4) * 64 + bcol * 8];
 
 #pragma unroll
     for (int i = 0; i < ffts_per_unit; ++i) {
       // 2. Pre-load B elements for next iteration
       if (i < ffts_per_unit - 1) {
         local_b[2 * (i + 1)] =
-            local_data[(i + 1) * Size + indexing.brow * 64 + indexing.bcol * 8];
+            local_data[(i + 1) * Size + brow * 64 + bcol * 8];
         local_b[2 * (i + 1) + 1] =
-            local_data[(i + 1) * Size + (indexing.brow + 4) * 64 +
-                       indexing.bcol * 8];
+            local_data[(i + 1) * Size + (brow + 4) * 64 + bcol * 8];
       }
 
       // 3. Compute FFT on 512 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[2 * i], local_b[2 * i + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2, transpose_lane_b1,
+                                 transpose_lane_b2);
 
       fft_group.sync();
       // 4. Save intermediate results to memory in correct order
-      local_data[i * Size + indexing.crow * 64 + indexing.ccol * 8] =
-          local_b[2 * i];
-      local_data[i * Size + indexing.crow * 64 + (indexing.ccol + 1) * 8] =
-          local_b[2 * i + 1];
+      local_data[i * Size + crow * 64 + ccol * 8] = local_b[2 * i];
+      local_data[i * Size + crow * 64 + (ccol + 1) * 8] = local_b[2 * i + 1];
 
       local_data -= warp_local_idx;
       fft_group.sync();
 
       // 5. Perform packed radix-8 via tensor cores
       // each warp loads 8 sequences of length 8
-      const auto load_col = indexing.bcol + warp.meta_group_rank() * 8;
-      const auto twiddle3 = pow_theta<512>(load_col * indexing.brow);
-      const auto twiddle4 = pow_theta<512>(load_col * (indexing.brow + 4));
+      const auto load_col = bcol + warp.meta_group_rank() * 8;
+      const auto twiddle3 = pow_theta<512>(load_col * brow);
+      const auto twiddle4 = pow_theta<512>(load_col * (brow + 4));
 
       local_data += i * Size + 64 * warp.meta_group_rank();
-      local_b[2 * i] = twiddle3 * local_data[indexing.brow + indexing.bcol * 8];
-      local_b[2 * i + 1] =
-          twiddle4 * local_data[indexing.brow + 4 + indexing.bcol * 8];
+      local_b[2 * i] = twiddle3 * local_data[brow + bcol * 8];
+      local_b[2 * i + 1] = twiddle4 * local_data[brow + 4 + bcol * 8];
 
       double s11, s12, s21, s22, s31, s32;
       s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
@@ -112,12 +108,12 @@ struct tensor_fft_512 {
       local_b[2 * i + 1].real(s12 - s22);
       local_b[2 * i + 1].imag(s32 - s22 - s12);
 
-      const auto elem_idx = indexing.ccol + warp.meta_group_rank() * 8;
+      const auto elem_idx = ccol + warp.meta_group_rank() * 8;
       local_data -= i * Size + 64 * warp.meta_group_rank();
       fft_group.sync();
 
-      local_data[elem_idx + indexing.crow * 64] = local_b[2 * i];
-      local_data[elem_idx + 1 + indexing.crow * 64] = local_b[2 * i + 1];
+      local_data[elem_idx + crow * 64] = local_b[2 * i];
+      local_data[elem_idx + 1 + crow * 64] = local_b[2 * i + 1];
     }
   }
 };

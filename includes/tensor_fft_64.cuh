@@ -18,11 +18,11 @@ struct tensor_fft_64 {
   static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
-  mma_fp64_884_indexes indexing;
-  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
-  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
-  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+  mma_fp64_884_indexes;
+  const CT twiddle1 = pow_theta<64>(crow * ccol);
+  const CT twiddle2 = pow_theta<64>(crow * (ccol + 1));
+  const CT a1 = pow_theta<8>(arow * acol);
+  const CT a2 = pow_theta<8>(arow * (acol + 4));
 
   static constexpr char print_type[] = "MMA64";
 
@@ -56,29 +56,26 @@ struct tensor_fft_64 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 8 + indexing.bcol];
-    local_b[1] = local_data[(indexing.brow + 4) * 8 + indexing.bcol];
+    local_b[0] = local_data[brow * 8 + bcol];
+    local_b[1] = local_data[(brow + 4) * 8 + bcol];
 
 #pragma unroll
     for (int i = 0; i < ffts_per_unit; ++i) {
       // 2. Pre-load B elements for next iteration
       if (i < ffts_per_unit - 1) {
-        local_b[2 * (i + 1)] =
-            local_data[(i + 1) * Size + indexing.brow * 8 + indexing.bcol];
+        local_b[2 * (i + 1)] = local_data[(i + 1) * Size + brow * 8 + bcol];
         local_b[2 * (i + 1) + 1] =
-            local_data[(i + 1) * Size + (indexing.brow + 4) * 8 +
-                       indexing.bcol];
+            local_data[(i + 1) * Size + (brow + 4) * 8 + bcol];
       }
 
       // 3. Compute FFT on 64 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[2 * i], local_b[2 * i + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2, transpose_lane_b1,
+                                 transpose_lane_b2);
 
       // 4. Overlap store with next iteration
-      local_data[i * Size + indexing.crow * 8 + indexing.ccol] = local_b[2 * i];
-      local_data[i * Size + indexing.crow * 8 + (indexing.ccol + 1)] =
-          local_b[2 * i + 1];
+      local_data[i * Size + crow * 8 + ccol] = local_b[2 * i];
+      local_data[i * Size + crow * 8 + (ccol + 1)] = local_b[2 * i + 1];
     }
   }
 };

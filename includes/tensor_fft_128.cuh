@@ -18,13 +18,13 @@ struct tensor_fft_128 {
   static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
-  mma_fp64_884_indexes indexing;
+  mma_fp64_884_indexes;
 
-  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
-  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
+  const CT twiddle1 = pow_theta<64>(crow * ccol);
+  const CT twiddle2 = pow_theta<64>(crow * (ccol + 1));
 
-  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+  const CT a1 = pow_theta<8>(arow * acol);
+  const CT a2 = pow_theta<8>(arow * (acol + 4));
 
   static constexpr char print_type[] = "MMA128";
 
@@ -47,7 +47,7 @@ struct tensor_fft_128 {
     const auto block = cg::this_thread_block();
     const auto warp = cg::tiled_partition<32>(block);
 
-    const auto output_idx = indexing.crow * 8 + indexing.ccol;
+    const auto output_idx = crow * 8 + ccol;
 
     const CT twiddle4 = pow_theta<128>(output_idx);
     const CT twiddle5 = pow_theta<128>(output_idx + 1);
@@ -62,33 +62,31 @@ struct tensor_fft_128 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 16 + indexing.bcol * 2];
-    local_b[1] = local_data[(indexing.brow + 4) * 16 + indexing.bcol * 2];
+    local_b[0] = local_data[brow * 16 + bcol * 2];
+    local_b[1] = local_data[(brow + 4) * 16 + bcol * 2];
 
     // 3. Preload for next iter
-    local_b[2] = local_data[1 + indexing.brow * 16 + indexing.bcol * 2];
-    local_b[3] = local_data[1 + (indexing.brow + 4) * 16 + indexing.bcol * 2];
+    local_b[2] = local_data[1 + brow * 16 + bcol * 2];
+    local_b[3] = local_data[1 + (brow + 4) * 16 + bcol * 2];
 
     for (int i = 0; i < ffts_per_unit; ++i) {
       if (i + 1 < ffts_per_unit) {
-        local_b[4 * (i + 1)] =
-            local_data[i * Size + indexing.brow * 16 + indexing.bcol * 2];
+        local_b[4 * (i + 1)] = local_data[i * Size + brow * 16 + bcol * 2];
         local_b[4 * (i + 1) + 1] =
-            local_data[i * Size + (indexing.brow + 4) * 16 + indexing.bcol * 2];
+            local_data[i * Size + (brow + 4) * 16 + bcol * 2];
         local_b[4 * (i + 1) + 2] =
-            local_data[i * Size + 1 + indexing.brow * 16 + indexing.bcol * 2];
+            local_data[i * Size + 1 + brow * 16 + bcol * 2];
         local_b[4 * (i + 1) + 3] =
-            local_data[i * Size + 1 + (indexing.brow + 4) * 16 +
-                       indexing.bcol * 2];
+            local_data[i * Size + 1 + (brow + 4) * 16 + bcol * 2];
       }
       // 3. Compute FFT on 128 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[4 * i], local_b[4 * i + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2, transpose_lane_b1,
+                                 transpose_lane_b2);
 
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[4 * i + 2], local_b[4 * i + 3],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2, transpose_lane_b1,
+                                 transpose_lane_b2);
 
       auto tmp = local_b[4 * i + 2] * twiddle4;
       local_b[4 * i + 2] = local_b[4 * i] - tmp;

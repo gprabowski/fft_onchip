@@ -18,15 +18,15 @@ struct tensor_fft_4096 {
   static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
-  mma_fp64_884_indexes indexing;
-  const int b_row_idx = indexing.brow * 8 + indexing.bcol;
-  const int c_row_idx = indexing.crow * 8 + indexing.ccol;
+  mma_fp64_884_indexes;
+  const int b_row_idx = brow * 8 + bcol;
+  const int c_row_idx = crow * 8 + ccol;
 
-  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
-  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
+  const CT twiddle1 = pow_theta<64>(crow * ccol);
+  const CT twiddle2 = pow_theta<64>(crow * (ccol + 1));
 
-  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+  const CT a1 = pow_theta<8>(arow * acol);
+  const CT a2 = pow_theta<8>(arow * (acol + 4));
 
   static constexpr char print_type[] = "MMA4096";
 
@@ -65,8 +65,7 @@ struct tensor_fft_4096 {
 
       // 3. Compute FFT on 64 elements
       fft_kernels::c64_fft64<CT>(a1, a2, b1, b2, twiddle1, twiddle2,
-                                 indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 transpose_lane_b1, transpose_lane_b2);
 
       // 4. Save intermediate results to memory in correct order
       sh_d[i + c_row_idx * 64] = b1;
@@ -86,8 +85,8 @@ struct tensor_fft_4096 {
 
       // 3. Compute FFT on 64 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[reg_idx], local_b[reg_idx + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2, transpose_lane_b1,
+                                 transpose_lane_b2);
     }
 
     block.sync();
