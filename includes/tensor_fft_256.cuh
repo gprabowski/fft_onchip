@@ -13,7 +13,7 @@ template <typename CT, int Size, int UPB = 4, int FPU = 1>
 struct tensor_fft_256 {
   using this_t = tensor_fft_256<CT, Size>;
 
-  static constexpr auto threads = 128;
+  static constexpr auto threads = 32;
   static constexpr auto units_per_block = UPB;
   static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
@@ -45,18 +45,13 @@ struct tensor_fft_256 {
   __device__ void operator()() {
     const auto grid = cg::this_grid();
     const auto block = cg::this_thread_block();
-    const auto fft_group = cg::tiled_partition<128>(block);
-    const auto radix4_group = cg::tiled_partition<64>(fft_group);
-    const auto warp = cg::tiled_partition<32>(fft_group);
-
-    const auto warp_local_idx = warp.meta_group_rank();
+    const auto warp = cg::tiled_partition<32>(block);
 
     // local storage for all FFT elements
-    CT local_b[2 * ffts_per_unit];
+    CT local_b[8 * ffts_per_unit];
 
-    auto local_data =
-        (sh_d + Size * ffts_per_unit * (fft_group.meta_group_rank())) +
-        warp_local_idx;
+    auto local_data = sh_d + Size * ffts_per_unit * (warp.meta_group_rank());
+    const auto output_idx = indexing.crow * 8 + indexing.ccol;
 
     // 0. Prepare mma and transpose indices
 
@@ -66,59 +61,104 @@ struct tensor_fft_256 {
     local_b[0] = local_data[indexing.brow * 32 + indexing.bcol * 4];
     local_b[1] = local_data[(indexing.brow + 4) * 32 + indexing.bcol * 4];
 
-#pragma unroll
+    local_b[2] = local_data[1 + indexing.brow * 32 + indexing.bcol * 4];
+    local_b[3] = local_data[1 + (indexing.brow + 4) * 32 + indexing.bcol * 4];
+
+    local_b[4] = local_data[2 + indexing.brow * 32 + indexing.bcol * 4];
+    local_b[5] = local_data[2 + (indexing.brow + 4) * 32 + indexing.bcol * 4];
+
+    local_b[6] = local_data[3 + indexing.brow * 32 + indexing.bcol * 4];
+    local_b[7] = local_data[3 + (indexing.brow + 4) * 32 + indexing.bcol * 4];
+
     for (int i = 0; i < ffts_per_unit; ++i) {
       // 2. Pre-load B elements for next iteration
       if (i < ffts_per_unit - 1) {
-        local_b[2 * (i + 1)] =
+        local_b[8 * (i + 1)] =
             local_data[(i + 1) * Size + indexing.brow * 32 + indexing.bcol * 4];
-        local_b[2 * (i + 1) + 1] =
+        local_b[8 * (i + 1) + 1] =
             local_data[(i + 1) * Size + (indexing.brow + 4) * 32 +
+                       indexing.bcol * 4];
+
+        local_b[8 * (i + 1) + 2] =
+            local_data[(i + 1) * Size + 1 + indexing.brow * 32 +
+                       indexing.bcol * 4];
+        local_b[8 * (i + 1) + 3] =
+            local_data[(i + 1) * Size + 1 + (indexing.brow + 4) * 32 +
+                       indexing.bcol * 4];
+
+        local_b[8 * (i + 1) + 4] =
+            local_data[(i + 1) * Size + 2 + indexing.brow * 32 +
+                       indexing.bcol * 4];
+        local_b[8 * (i + 1) + 5] =
+            local_data[(i + 1) * Size + 2 + (indexing.brow + 4) * 32 +
+                       indexing.bcol * 4];
+
+        local_b[8 * (i + 1) + 6] =
+            local_data[(i + 1) * Size + 3 + indexing.brow * 32 +
+                       indexing.bcol * 4];
+        local_b[8 * (i + 1) + 7] =
+            local_data[(i + 1) * Size + 3 + (indexing.brow + 4) * 32 +
                        indexing.bcol * 4];
       }
 
       // 3. Compute FFT on 256 elements
-      fft_kernels::c64_fft64<CT>(a1, a2, local_b[2 * i], local_b[2 * i + 1],
+      fft_kernels::c64_fft64<CT>(a1, a2, local_b[8 * i], local_b[8 * i + 1],
+                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
+                                 indexing.transpose_lane_b2);
+      fft_kernels::c64_fft64<CT>(a1, a2, local_b[8 * i + 2], local_b[8 * i + 3],
+                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
+                                 indexing.transpose_lane_b2);
+      fft_kernels::c64_fft64<CT>(a1, a2, local_b[8 * i + 4], local_b[8 * i + 5],
+                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
+                                 indexing.transpose_lane_b2);
+      fft_kernels::c64_fft64<CT>(a1, a2, local_b[8 * i + 6], local_b[8 * i + 7],
                                  twiddle1, twiddle2, indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
 
-      fft_group.sync();
-      // 4. Save intermediate results to memory in correct order
-      local_data[i * Size + indexing.crow * 32 + indexing.ccol * 4] =
-          local_b[2 * i];
-      local_data[i * Size + indexing.crow * 32 + (indexing.ccol + 1) * 4] =
-          local_b[2 * i + 1];
+      // 5. perform radix-4 stage
+      const CT twiddle5_1 = pow_theta<256>(output_idx);
+      const CT twiddle6_1 = pow_theta<256>(2 * output_idx);
+      const CT twiddle7_1 = pow_theta<256>(3 * output_idx);
 
-      local_data -= warp_local_idx;
-      fft_group.sync();
+      const CT twiddle5_2 = pow_theta<256>(output_idx + 1);
+      const CT twiddle6_2 = pow_theta<256>(2 * output_idx + 2);
+      const CT twiddle7_2 = pow_theta<256>(3 * output_idx + 3);
 
-      if (radix4_group.meta_group_rank() == 0) {
-        // 5. perform radix-4 stage
-        const CT twiddle5 = pow_theta<256>(1 * radix4_group.thread_rank());
-        const CT twiddle6 = pow_theta<256>(2 * radix4_group.thread_rank());
-        const CT twiddle7 = pow_theta<256>(3 * radix4_group.thread_rank());
+      local_b[8 * i + 2] *= twiddle5_1;
+      local_b[8 * i + 4] *= twiddle6_1;
+      local_b[8 * i + 6] *= twiddle7_1;
 
-        const auto r1 = local_data[i * Size + 4 * radix4_group.thread_rank()];
-        const auto r2 =
-            twiddle5 *
-            local_data[i * Size + 4 * radix4_group.thread_rank() + 1];
-        const auto r3 =
-            twiddle6 *
-            local_data[i * Size + 4 * radix4_group.thread_rank() + 2];
-        const auto r4 =
-            twiddle7 *
-            local_data[i * Size + 4 * radix4_group.thread_rank() + 3];
+      local_data[i * Size + output_idx] = local_b[8 * i] + local_b[8 * i + 2] +
+                                          local_b[8 * i + 4] +
+                                          local_b[8 * i + 6];
 
-        radix4_group.sync();
+      local_data[i * Size + output_idx + 64] =
+          (local_b[8 * i] - local_b[8 * i + 4]) -
+          CT{0, 1} * (local_b[8 * i + 2] - local_b[8 * i + 6]);
+      local_data[i * Size + output_idx + 128] =
+          (local_b[8 * i] + local_b[8 * i + 4]) -
+          (local_b[8 * i + 2] + local_b[8 * i + 6]);
+      local_data[i * Size + output_idx + 192] =
+          (local_b[8 * i] - local_b[8 * i + 4]) +
+          CT{0, 1} * (local_b[8 * i + 2] - local_b[8 * i + 6]);
 
-        local_data[i * Size + radix4_group.thread_rank()] = r1 + r2 + r3 + r4;
-        local_data[i * Size + radix4_group.thread_rank() + 64] =
-            r1 - r3 - CT{0, 1} * (r2 - r4);
-        local_data[i * Size + radix4_group.thread_rank() + 128] =
-            r1 + r3 - r2 - r4;
-        local_data[i * Size + radix4_group.thread_rank() + 192] =
-            r1 - r3 + CT{0, 1} * (r2 - r4);
-      }
+      local_b[8 * i + 3] *= twiddle5_2;
+      local_b[8 * i + 5] *= twiddle6_2;
+      local_b[8 * i + 7] *= twiddle7_2;
+
+      local_data[i * Size + output_idx + 1] =
+          local_b[8 * i + 1] + local_b[8 * i + 3] + local_b[8 * i + 5] +
+          local_b[8 * i + 7];
+
+      local_data[i * Size + output_idx + 65] =
+          (local_b[8 * i + 1] - local_b[8 * i + 5]) -
+          CT{0, 1} * (local_b[8 * i + 3] - local_b[8 * i + 7]);
+      local_data[i * Size + output_idx + 129] =
+          (local_b[8 * i + 1] + local_b[8 * i + 5]) -
+          (local_b[8 * i + 3] + local_b[8 * i + 7]);
+      local_data[i * Size + output_idx + 193] =
+          (local_b[8 * i + 1] - local_b[8 * i + 5]) +
+          CT{0, 1} * (local_b[8 * i + 3] - local_b[8 * i + 7]);
     }
   }
 };

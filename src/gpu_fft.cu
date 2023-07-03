@@ -8,13 +8,14 @@
 #include <common.cuh>
 #include <reference.cuh>
 #include <tensor_fft_128.cuh>
+#include <tensor_fft_256.cuh>
 #include <tensor_fft_4096.cuh>
 #include <tensor_fft_512.cuh>
 #include <testing.cuh>
 
 int main() {
   using config::CT;
-  constexpr auto N = 128;
+  constexpr auto N = 256;
 
   std::random_device rd;
   std::uniform_real_distribution<float> dist(0.0, 1.0);
@@ -29,7 +30,7 @@ int main() {
   // compare correctness
   std::vector<config::CT> out_algorithm(N), out_reference(N);
 
-  using customExec = fft::tensor_fft_128<config::CT, N>;
+  using customExec = fft::tensor_fft_256<config::CT, N>;
   using refExec = fft::reference_fft<N>;
 
   const auto alg_run_transfers =
@@ -48,7 +49,7 @@ int main() {
   }
 
   if constexpr (config::print_results) {
-    for (int i = 0; i < data.size(); ++i) {
+    for (int i = 0; i < 2 * data.size(); ++i) {
       std::cout << " Ref: " << out_reference[i].real() << " "
                 << out_reference[i].imag()
                 << " Ten: " << out_algorithm[i].real() << " "
