@@ -28,7 +28,7 @@ namespace bench {{
 void test_{0}(const std::vector<config::CT> &data) {{
     using baseline = fft::reference_fft<{0}>;
     for(int i = 0; i < 100; ++i) {{
-        testing::perf_test_printer<baseline::VT, {0}, baseline, false>(data);
+        testing::perf_test_printer<baseline::VT, {0}, baseline>(data, config::sm_multiplier, false);
     }}
 
     testing::perf_test_printer<baseline::VT, {0}, baseline>(data);
