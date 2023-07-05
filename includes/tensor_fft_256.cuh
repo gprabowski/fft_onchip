@@ -36,7 +36,7 @@ struct tensor_fft_256 {
   }
 
   // this function multiplies complex number by i
-  static __forceinline__ __device__ CT rev(const CT& v) {
+  static __forceinline__ __device__ CT rev(const CT &v) {
     return CT{-v.imag(), v.real()};
   }
 
@@ -64,17 +64,13 @@ struct tensor_fft_256 {
 
     for (int i = 0; i < ffts_per_unit; ++i) {
       // 3. Compute FFT on 256 elements
-      b[tm8] = data[pos];
-      b[1] = data[bpos + 128];
-
-      b[2] = data[1 + bpos];
-      b[3] = data[1 + bpos + 128];
-
-      b[4] = data[2 + bpos];
-      b[5] = data[2 + bpos + 128];
-
-      b[6] = data[3 + bpos];
-      b[7] = data[3 + bpos + 128];
+      // load order is dependent of thread id to get rid of
+      // shared memory bank conflicts
+#pragma unroll 8
+      for (int load_i = 0; load_i < 8; ++load_i) {
+        const auto key_1 = (indexing.bcol + load_i) % 8;
+        b[key_1] = data[key_1 / 2 + bpos + key_1 % 2 ? 128 : 0];
+      }
 
       fft_kernels::c64_fft64<CT>(a1, a2, b[0], b[1], twiddle1, twiddle2,
                                  indexing.transpose_lane_b1,
