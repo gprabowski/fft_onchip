@@ -1,6 +1,6 @@
 from nvidia/cuda:12.2.0-devel-ubuntu20.04
 
-RUN apt-get update && apt-get -y install wget git ninja-build python3
+RUN apt-get update && apt-get -y install wget git ninja-build python3 neovim
 RUN mkdir /home/pg && mkdir /home/pg/soft
 
 # Download CMAKE and put in /home/pg/soft/cmake
