@@ -46,69 +46,53 @@ struct tensor_fft_256 {
 
   __device__ void operator()() {
 
-    // local storage for all FFT elements
     CT b[8];
 
     auto data = sh_d + Size * ffts_per_unit *
                            ((threadIdx.x + blockDim.x * threadIdx.y) / 32);
 
-    const auto output_idx = indexing.crow * 8 + indexing.ccol;
-
-    // 0. Prepare mma and transpose indices
-
-    // 1. Pre-load b for 1st iter
-    // in here we tranpose the matrix (as its naturally
-    // set in memory in a column major fashion)
-
-    const auto bpos = indexing.brow * 32 + indexing.bcol * 4;
-
     for (int i = 0; i < ffts_per_unit; ++i) {
-      // 3. Compute FFT on 256 elements
-      // load order is dependent of thread id to get rid of
-      // shared memory bank conflicts
-#pragma unroll 8
-      for (int load_i = 0; load_i < 8; ++load_i) {
-        const auto key_1 = (indexing.bcol + load_i) % 8;
-        b[key_1] = data[key_1 / 2 + bpos + key_1 % 2 ? 128 : 0];
+#pragma unroll 4
+      for (int load_i = 0; load_i < 4; ++load_i) {
+        // preloading doesn't give anything
+        b[2 * load_i] = data[load_i + indexing.bpos];
+        b[2 * load_i + 1] = data[load_i + indexing.bpos + 128];
       }
 
       fft_kernels::c64_fft64<CT>(a1, a2, b[0], b[1], twiddle1, twiddle2,
                                  indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
+
       fft_kernels::c64_fft64<CT>(a1, a2, b[2], b[3], twiddle1, twiddle2,
                                  indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
+
       fft_kernels::c64_fft64<CT>(a1, a2, b[4], b[5], twiddle1, twiddle2,
                                  indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
+
       fft_kernels::c64_fft64<CT>(a1, a2, b[6], b[7], twiddle1, twiddle2,
                                  indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
 
-      // 5. perform radix-4 stage
-      const CT tw3 = pow_theta<256>(output_idx);
+      b[2] *= pow_theta<256>(indexing.cpos);
+      b[3] *= pow_theta<256>(indexing.cpos + 1);
 
-      const CT tw4 = pow_theta<256>(output_idx + 1);
+      b[4] *= pow_theta<256>(2 * indexing.cpos);
+      b[5] *= pow_theta<256>(2 * indexing.cpos + 2);
 
-      // compiler optimizes this to only 2 mults total
-      b[2] *= tw3;
-      b[4] *= tw3 * tw3;
-      b[6] *= tw3 * tw3 * tw3;
+      b[6] *= pow_theta<256>(3 * indexing.cpos);
+      b[7] *= pow_theta<256>(3 * indexing.cpos + 3);
 
-      data[output_idx] = b[0] + b[2] + b[4] + b[6];
-      data[output_idx + 64] = (b[0] - b[4]) - rev(b[2] - b[6]);
-      data[output_idx + 128] = (b[0] + b[4]) - (b[2] + b[6]);
-      data[output_idx + 192] = (b[0] - b[4]) + rev(b[2] - b[6]);
+      data[indexing.cpos] = b[0] + b[2] + b[4] + b[6];
+      data[indexing.cpos + 64] = b[0] - b[4] - rev(b[2] - b[6]);
+      data[indexing.cpos + 128] = b[0] + b[4] - (b[2] + b[6]);
+      data[indexing.cpos + 192] = b[0] - b[4] + rev(b[2] - b[6]);
 
-      // compiler optimizes this to only 2 mults total
-      b[3] *= tw4;
-      b[5] *= tw4 * tw4;
-      b[7] *= tw4 * tw4 * tw4;
-
-      data[output_idx + 1] = b[1] + b[3] + b[5] + b[7];
-      data[output_idx + 65] = (b[1] - b[5]) - rev(b[3] - b[7]);
-      data[output_idx + 129] = (b[1] + b[5]) - (b[3] + b[7]);
-      data[output_idx + 193] = (b[1] - b[5]) + rev(b[3] - b[7]);
+      data[indexing.cpos + 1] = b[1] + b[3] + b[5] + b[7];
+      data[indexing.cpos + 65] = b[1] - b[5] - rev(b[3] - b[7]);
+      data[indexing.cpos + 129] = b[1] + b[5] - (b[3] + b[7]);
+      data[indexing.cpos + 193] = b[1] - b[5] + rev(b[3] - b[7]);
 
       data += Size;
     }
