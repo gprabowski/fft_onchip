@@ -67,8 +67,7 @@ def main():
 using config::CT;
                       """)
 
-    #fft_sizes = [64, 128, 256, 512, 4096]
-    fft_sizes = [256]
+    fft_sizes = [64, 128, 256, 512, 4096]
 
     for fft_size in fft_sizes: 
         file_counter = 0

@@ -6,7 +6,7 @@
 
 namespace fft {
 
-template <typename CT, int Size, int UPB = 4, int FPU = 1>
+template <typename CT, int Size, int UPB = 2, int FPU = 1>
 struct tensor_fft_256 {
   using this_t = tensor_fft_256<CT, Size>;
 
@@ -19,6 +19,9 @@ struct tensor_fft_256 {
 
   const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
   const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
+
+  const CT tw3 = pow_theta<256>(indexing.cpos);
+  const CT tw4 = pow_theta<256>(indexing.cpos + 1);
 
   const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
   const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
@@ -33,11 +36,6 @@ struct tensor_fft_256 {
     const float ang = p * (-2.f / N);
     sincospif(ang, &s, &c);
     return {c, s};
-  }
-
-  // this function multiplies complex number by i
-  static __forceinline__ __device__ CT rev(const CT &v) {
-    return CT{-v.imag(), v.real()};
   }
 
   CT *sh_d;
@@ -75,24 +73,31 @@ struct tensor_fft_256 {
                                  indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
 
-      b[2] *= pow_theta<256>(indexing.cpos);
-      b[3] *= pow_theta<256>(indexing.cpos + 1);
+      b[2] *= tw3;
+      b[4] *= tw3 * tw3;
+      b[6] *= tw3 * tw3 * tw3;
 
-      b[4] *= pow_theta<256>(2 * indexing.cpos);
-      b[5] *= pow_theta<256>(2 * indexing.cpos + 2);
-
-      b[6] *= pow_theta<256>(3 * indexing.cpos);
-      b[7] *= pow_theta<256>(3 * indexing.cpos + 3);
+      b[3] *= tw4;
+      b[5] *= tw4 * tw4;
+      b[7] *= tw4 * tw4 * tw4;
 
       data[indexing.cpos] = b[0] + b[2] + b[4] + b[6];
-      data[indexing.cpos + 64] = b[0] - b[4] - rev(b[2] - b[6]);
+      data[indexing.cpos + 64] =
+          b[0] - b[4] -
+          CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
       data[indexing.cpos + 128] = b[0] + b[4] - (b[2] + b[6]);
-      data[indexing.cpos + 192] = b[0] - b[4] + rev(b[2] - b[6]);
+      data[indexing.cpos + 192] =
+          b[0] - b[4] +
+          CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
 
       data[indexing.cpos + 1] = b[1] + b[3] + b[5] + b[7];
-      data[indexing.cpos + 65] = b[1] - b[5] - rev(b[3] - b[7]);
+      data[indexing.cpos + 65] =
+          b[1] - b[5] -
+          CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
       data[indexing.cpos + 129] = b[1] + b[5] - (b[3] + b[7]);
-      data[indexing.cpos + 193] = b[1] - b[5] + rev(b[3] - b[7]);
+      data[indexing.cpos + 193] =
+          b[1] - b[5] +
+          CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
 
       data += Size;
     }
