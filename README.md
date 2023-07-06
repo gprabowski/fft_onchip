@@ -25,9 +25,3 @@ MSE: 2.33208e-14
 ```
 
 to see a side by side comparison of results in addition to the MSE, change the `config.hpp::print_results` to `true`.
-
-current TODO:
-- [ ] Add all power of 2 sizes
-- [ ] Bench FPU/UPB configs for all FFT sizes (more rebust benchmarking)
-- [ ] Add sm_90 FFT
-- [ ] Wherever possible, change sync to arrive and wait for bigger groups
