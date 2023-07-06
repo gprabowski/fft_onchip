@@ -60,13 +60,15 @@ def main():
 
 #include <vector>
 #include <random>
+#include <algorithm>
 #include <iostream>
 #include <config.hpp>
 
 using config::CT;
                       """)
 
-    fft_sizes = [64, 128, 256, 512, 4096]
+    #fft_sizes = [64, 128, 256, 512, 4096]
+    fft_sizes = [256]
 
     for fft_size in fft_sizes: 
         file_counter = 0

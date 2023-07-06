@@ -58,11 +58,11 @@ int main() {
   }
 
   const auto ref_run_no_transfers =
-      testing::run_perf_and_corr_tests<refExec::VT, N, refExec, false>(
-          data, out_reference);
+      testing::run_perf_tests<refExec::VT, N, refExec, false>(
+          data);
   const auto alg_run_no_transfers =
-      testing::run_perf_and_corr_tests<config::CT, N, customExec, false>(
-          data, out_algorithm);
+      testing::run_perf_tests<config::CT, N, customExec, false>(
+          data);
 
   mse /= data.size();
 
