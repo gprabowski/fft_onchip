@@ -1,0 +1,25 @@
+Fatbin ptx code:
+================
+arch = sm_80
+code version = [8,2]
+host = linux
+compile_size = 64bit
+compressed
+identifier = /home/pg/fft_onchip/src/gpu_fft.cu
+ptxasOptions =  --generate-line-info
+
+Fatbin elf code:
+================
+arch = sm_80
+code version = [1,7]
+host = linux
+compile_size = 64bit
+identifier = /home/pg/fft_onchip/src/gpu_fft.cu
+
+Resource usage:
+ Common:
+  GLOBAL:700120
+ Function _ZN7testing10fft_testerIN7cufftdx6detail7complexIdEEN3fft13reference_fftILi8EEELi8ELi32EEEviPT_b:
+  REG:70 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:369 CONSTANT[2]:16 TEXTURE:0 SURFACE:0 SAMPLER:0
+ Function _ZN7testing10fft_testerIN6thrust7complexIdEEN3fft12tensor_fft_8IS3_Li8ELi1ELi32EEELi8ELi1EEEviPT_b:
+  REG:50 STACK:0 SHARED:0 LOCAL:0 CONSTANT[0]:369 TEXTURE:0 SURFACE:0 SAMPLER:0

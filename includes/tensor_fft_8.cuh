@@ -9,12 +9,13 @@ namespace fft {
 
 namespace cg = cooperative_groups;
 
-template <typename CT, int Size> struct tensor_fft_8 {
+template <typename CT, int Size, int UPB = 1, int FPU = 32>
+struct tensor_fft_8 {
   using this_t = tensor_fft_8<CT, Size>;
 
   static constexpr auto threads = 32;
-  static constexpr auto units_per_block = 1;
-  static constexpr auto ffts_per_unit = 32;
+  static constexpr auto units_per_block = UPB;
+  static constexpr auto ffts_per_unit = FPU;
   static constexpr auto max_threads_per_block = units_per_block * threads;
 
   static constexpr char print_type[] = "MMA8";

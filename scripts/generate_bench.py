@@ -14,6 +14,7 @@ header_preambule = """#pragma once
 #include <vector>
 #include <config.hpp>
 
+#include <tensor_fft_8.cuh>
 #include <tensor_fft_64.cuh>
 #include <tensor_fft_128.cuh>
 #include <tensor_fft_256.cuh>
@@ -38,6 +39,7 @@ void test_{0}(const std::vector<config::CT> &data) {{
 src_preambule = """
 #include <config.hpp>
 
+#include <tensor_fft_8.cuh>
 #include <tensor_fft_64.cuh>
 #include <tensor_fft_128.cuh>
 #include <tensor_fft_256.cuh>
@@ -51,7 +53,7 @@ src_preambule = """
 namespace bench {{
 """
 
-threads_necessary = {64: 32, 128: 64, 256: 128, 512: 256, 4096: 512}
+threads_necessary = {8: 32, 64: 32, 128: 64, 256: 128, 512: 256, 4096: 512}
 
 def main():
     main_header = open(f"../includes/bench.cuh", "w")
@@ -67,7 +69,7 @@ def main():
 using config::CT;
                       """)
 
-    fft_sizes = [64, 128, 256, 512, 4096]
+    fft_sizes = [8, 64, 128, 256, 512, 4096]
 
     for fft_size in fft_sizes: 
         file_counter = 0
@@ -88,9 +90,11 @@ using config::CT;
         curr_file.write(src_preambule.format(fft_size) + "\n")
         curr_file.write(f"void test_{fft_size}_{file_counter}(const std::vector<config::CT> &data) "+"{\n")
         
-
         units_range = [1] + [i for i in range(2, 33, 2)]
         ffts_range = [1] + [i for i in range(2, 65, 2)]
+
+        if fft_size == 8:
+            ffts_range = [i for i in range(8, 129, 8)]
 
         max_shared_b = 65536
 
