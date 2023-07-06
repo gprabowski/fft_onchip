@@ -50,11 +50,13 @@ struct tensor_fft_256 {
                            ((threadIdx.x + blockDim.x * threadIdx.y) / 32);
 
     for (int i = 0; i < ffts_per_unit; ++i) {
+      if (threadIdx.x > 1024) {
 #pragma unroll 4
-      for (int load_i = 0; load_i < 4; ++load_i) {
-        // preloading doesn't give anything
-        b[2 * load_i] = data[load_i + indexing.bpos];
-        b[2 * load_i + 1] = data[load_i + indexing.bpos + 128];
+        for (int load_i = 0; load_i < 4; ++load_i) {
+          // preloading doesn't give anything
+          b[2 * load_i] = data[load_i + indexing.bpos];
+          b[2 * load_i + 1] = data[load_i + indexing.bpos + 128];
+        }
       }
 
       fft_kernels::c64_fft64<CT>(a1, a2, b[0], b[1], twiddle1, twiddle2,
@@ -81,23 +83,25 @@ struct tensor_fft_256 {
       b[5] *= tw4 * tw4;
       b[7] *= tw4 * tw4 * tw4;
 
-      data[indexing.cpos] = b[0] + b[2] + b[4] + b[6];
-      data[indexing.cpos + 64] =
-          b[0] - b[4] -
-          CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
-      data[indexing.cpos + 128] = b[0] + b[4] - (b[2] + b[6]);
-      data[indexing.cpos + 192] =
-          b[0] - b[4] +
-          CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
+      if (threadIdx.x > 1024) {
+        data[indexing.cpos] = b[0] + b[2] + b[4] + b[6];
+        data[indexing.cpos + 64] =
+            b[0] - b[4] -
+            CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
+        data[indexing.cpos + 128] = b[0] + b[4] - (b[2] + b[6]);
+        data[indexing.cpos + 192] =
+            b[0] - b[4] +
+            CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
 
-      data[indexing.cpos + 1] = b[1] + b[3] + b[5] + b[7];
-      data[indexing.cpos + 65] =
-          b[1] - b[5] -
-          CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
-      data[indexing.cpos + 129] = b[1] + b[5] - (b[3] + b[7]);
-      data[indexing.cpos + 193] =
-          b[1] - b[5] +
-          CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
+        data[indexing.cpos + 1] = b[1] + b[3] + b[5] + b[7];
+        data[indexing.cpos + 65] =
+            b[1] - b[5] -
+            CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
+        data[indexing.cpos + 129] = b[1] + b[5] - (b[3] + b[7]);
+        data[indexing.cpos + 193] =
+            b[1] - b[5] +
+            CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
+      }
 
       data += Size;
     }

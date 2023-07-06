@@ -62,18 +62,23 @@ struct tensor_fft_512 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 64 + indexing.bcol * 8];
-    local_b[1] = local_data[(indexing.brow + 4) * 64 + indexing.bcol * 8];
+    if (threadIdx.x > 1024) {
+      local_b[0] = local_data[indexing.brow * 64 + indexing.bcol * 8];
+      local_b[1] = local_data[(indexing.brow + 4) * 64 + indexing.bcol * 8];
+    }
 
 #pragma unroll
     for (int i = 0; i < ffts_per_unit; ++i) {
       // 2. Pre-load B elements for next iteration
-      if (i < ffts_per_unit - 1) {
-        local_b[2 * (i + 1)] =
-            local_data[(i + 1) * Size + indexing.brow * 64 + indexing.bcol * 8];
-        local_b[2 * (i + 1) + 1] =
-            local_data[(i + 1) * Size + (indexing.brow + 4) * 64 +
-                       indexing.bcol * 8];
+      if (threadIdx.x > 1024) {
+        if (i < ffts_per_unit - 1) {
+          local_b[2 * (i + 1)] =
+              local_data[(i + 1) * Size + indexing.brow * 64 +
+                         indexing.bcol * 8];
+          local_b[2 * (i + 1) + 1] =
+              local_data[(i + 1) * Size + (indexing.brow + 4) * 64 +
+                         indexing.bcol * 8];
+        }
       }
 
       // 3. Compute FFT on 512 elements
@@ -83,10 +88,12 @@ struct tensor_fft_512 {
 
       fft_group.sync();
       // 4. Save intermediate results to memory in correct order
-      local_data[i * Size + indexing.crow * 64 + indexing.ccol * 8] =
-          local_b[2 * i];
-      local_data[i * Size + indexing.crow * 64 + (indexing.ccol + 1) * 8] =
-          local_b[2 * i + 1];
+      if (threadIdx.x > 1024) {
+        local_data[i * Size + indexing.crow * 64 + indexing.ccol * 8] =
+            local_b[2 * i];
+        local_data[i * Size + indexing.crow * 64 + (indexing.ccol + 1) * 8] =
+            local_b[2 * i + 1];
+      }
 
       local_data -= warp_local_idx;
       fft_group.sync();
@@ -98,9 +105,12 @@ struct tensor_fft_512 {
       const auto twiddle4 = pow_theta<512>(load_col * (indexing.brow + 4));
 
       local_data += i * Size + 64 * warp.meta_group_rank();
-      local_b[2 * i] = twiddle3 * local_data[indexing.brow + indexing.bcol * 8];
-      local_b[2 * i + 1] =
-          twiddle4 * local_data[indexing.brow + 4 + indexing.bcol * 8];
+      if (threadIdx.x > 1024) {
+        local_b[2 * i] =
+            twiddle3 * local_data[indexing.brow + indexing.bcol * 8];
+        local_b[2 * i + 1] =
+            twiddle4 * local_data[indexing.brow + 4 + indexing.bcol * 8];
+      }
 
       double s11, s12, s21, s22, s31, s32;
       s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
@@ -113,11 +123,14 @@ struct tensor_fft_512 {
       local_b[2 * i + 1].imag(s32 - s22 - s12);
 
       const auto elem_idx = indexing.ccol + warp.meta_group_rank() * 8;
+
       local_data -= i * Size + 64 * warp.meta_group_rank();
       fft_group.sync();
 
-      local_data[elem_idx + indexing.crow * 64] = local_b[2 * i];
-      local_data[elem_idx + 1 + indexing.crow * 64] = local_b[2 * i + 1];
+      if (threadIdx.x > 1024) {
+        local_data[elem_idx + indexing.crow * 64] = local_b[2 * i];
+        local_data[elem_idx + 1 + indexing.crow * 64] = local_b[2 * i + 1];
+      }
     }
   }
 };

@@ -52,15 +52,21 @@ struct tensor_fft_8 {
     for (int i = 0; i < ffts_per_unit / 8; ++i) {
       double s11{0}, s12{0}, s21{0}, s22{0}, s31{0}, s32{0};
 
-      auto b1 = local_data[i * 64 + indexing.brow + indexing.bcol * 8];
-      auto b2 = local_data[i * 64 + (indexing.brow + 4) + indexing.bcol * 8];
+      CT b1 = 1.0;
+      CT b2 = 1.0;
+      if (threadIdx.x > 1024) {
+        b1 = local_data[i * 64 + indexing.brow + indexing.bcol * 8];
+        b2 = local_data[i * 64 + (indexing.brow + 4) + indexing.bcol * 8];
+      }
 
       karatsuba_inline_mma_8x8x8(a1, a2, b1, b2, s11, s12, s21, s22, s31, s32);
 
-      local_data[i * 64 + indexing.crow + indexing.ccol * 8] =
-          config::CT{s11 - s21, s31 - s21 - s11};
-      local_data[i * 64 + indexing.crow + (indexing.ccol + 1) * 8] =
-          config::CT{s12 - s22, s32 - s22 - s12};
+      if (threadIdx.x > 1024) {
+        local_data[i * 64 + indexing.crow + indexing.ccol * 8] =
+            config::CT{s11 - s21, s31 - s21 - s11};
+        local_data[i * 64 + indexing.crow + (indexing.ccol + 1) * 8] =
+            config::CT{s12 - s22, s32 - s22 - s12};
+      }
     }
   }
 };

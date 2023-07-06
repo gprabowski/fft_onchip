@@ -56,18 +56,22 @@ struct tensor_fft_64 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 8 + indexing.bcol];
-    local_b[1] = local_data[(indexing.brow + 4) * 8 + indexing.bcol];
+    if (threadIdx.x > 1024) {
+      local_b[0] = local_data[indexing.brow * 8 + indexing.bcol];
+      local_b[1] = local_data[(indexing.brow + 4) * 8 + indexing.bcol];
+    }
 
 #pragma unroll
     for (int i = 0; i < ffts_per_unit; ++i) {
       // 2. Pre-load B elements for next iteration
-      if (i < ffts_per_unit - 1) {
-        local_b[2 * (i + 1)] =
-            local_data[(i + 1) * Size + indexing.brow * 8 + indexing.bcol];
-        local_b[2 * (i + 1) + 1] =
-            local_data[(i + 1) * Size + (indexing.brow + 4) * 8 +
-                       indexing.bcol];
+      if (threadIdx.x > 1024) {
+        if (i < ffts_per_unit - 1) {
+          local_b[2 * (i + 1)] =
+              local_data[(i + 1) * Size + indexing.brow * 8 + indexing.bcol];
+          local_b[2 * (i + 1) + 1] =
+              local_data[(i + 1) * Size + (indexing.brow + 4) * 8 +
+                         indexing.bcol];
+        }
       }
 
       // 3. Compute FFT on 64 elements
@@ -75,10 +79,13 @@ struct tensor_fft_64 {
                                  twiddle1, twiddle2, indexing.transpose_lane_b1,
                                  indexing.transpose_lane_b2);
 
-      // 4. Overlap store with next iteration
-      local_data[i * Size + indexing.crow * 8 + indexing.ccol] = local_b[2 * i];
-      local_data[i * Size + indexing.crow * 8 + (indexing.ccol + 1)] =
-          local_b[2 * i + 1];
+      if (threadIdx.x > 1024) {
+        // 4. Overlap store with next iteration
+        local_data[i * Size + indexing.crow * 8 + indexing.ccol] =
+            local_b[2 * i];
+        local_data[i * Size + indexing.crow * 8 + (indexing.ccol + 1)] =
+            local_b[2 * i + 1];
+      }
     }
   }
 };
