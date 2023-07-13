@@ -83,12 +83,9 @@ struct tensor_fft_128 {
       }
       // 3. Compute FFT on 128 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[4 * i], local_b[4 * i + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
-
+                                 twiddle1, twiddle2);
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[4 * i + 2], local_b[4 * i + 3],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2);
 
       auto tmp = local_b[4 * i + 2] * twiddle4;
       local_b[4 * i + 2] = local_b[4 * i] - tmp;

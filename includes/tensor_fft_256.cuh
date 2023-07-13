@@ -2,11 +2,12 @@
 
 #include <c64_fft64.cuh>
 #include <common.cuh>
+#include <constants.cuh>
 #include <tensor_utils.cuh>
 
 namespace fft {
 
-template <typename CT, int Size, int UPB = 2, int FPU = 1>
+template <typename CT, int Size, int UPB = 8, int FPU = 1>
 struct tensor_fft_256 {
   using this_t = tensor_fft_256<CT, Size>;
 
@@ -20,11 +21,11 @@ struct tensor_fft_256 {
   const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
   const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
 
+  const CT a1 = pow_theta<8>(indexing.arow * (2 * indexing.acol));
+  const CT a2 = pow_theta<8>(indexing.arow * (2 * indexing.acol + 1));
+
   const CT tw3 = pow_theta<256>(indexing.cpos);
   const CT tw4 = pow_theta<256>(indexing.cpos + 1);
-
-  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
 
   static constexpr char print_type[] = "MMA256";
 
@@ -54,24 +55,13 @@ struct tensor_fft_256 {
       for (int load_i = 0; load_i < 4; ++load_i) {
         // preloading doesn't give anything
         b[2 * load_i] = data[load_i + indexing.bpos];
-        b[2 * load_i + 1] = data[load_i + indexing.bpos + 128];
+        b[2 * load_i + 1] = data[load_i + indexing.bpos + 32];
       }
 
-      fft_kernels::c64_fft64<CT>(a1, a2, b[0], b[1], twiddle1, twiddle2,
-                                 indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
-
-      fft_kernels::c64_fft64<CT>(a1, a2, b[2], b[3], twiddle1, twiddle2,
-                                 indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
-
-      fft_kernels::c64_fft64<CT>(a1, a2, b[4], b[5], twiddle1, twiddle2,
-                                 indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
-
-      fft_kernels::c64_fft64<CT>(a1, a2, b[6], b[7], twiddle1, twiddle2,
-                                 indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+      fft_kernels::c64_fft64<CT>(a1, a2, b[0], b[1], twiddle1, twiddle2);
+      fft_kernels::c64_fft64<CT>(a1, a2, b[2], b[3], twiddle1, twiddle2);
+      fft_kernels::c64_fft64<CT>(a1, a2, b[4], b[5], twiddle1, twiddle2);
+      fft_kernels::c64_fft64<CT>(a1, a2, b[6], b[7], twiddle1, twiddle2);
 
       b[2] *= tw3;
       b[4] *= tw3 * tw3;

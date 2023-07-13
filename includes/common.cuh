@@ -29,7 +29,5 @@ struct mma_fp64_884_indexes {
 #define crow arow
 
   const int cpos = crow * 8 + ccol;
-  const int bpos = brow * 32 + bcol * 4;
-  const int transpose_lane_b1 = bcol * 4 + brow / 2;
-  const int transpose_lane_b2 = transpose_lane_b1 + 2;
+  const int bpos = (brow * 2) * 32 + bcol * 4;
 };
