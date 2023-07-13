@@ -64,9 +64,7 @@ struct tensor_fft_4096 {
       b2 = sh_d[i + (b_row_idx + 32) * 64];
 
       // 3. Compute FFT on 64 elements
-      fft_kernels::c64_fft64<CT>(a1, a2, b1, b2, twiddle1, twiddle2,
-                                 indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+      fft_kernels::c64_fft64<CT>(a1, a2, b1, b2, twiddle1, twiddle2);
 
       // 4. Save intermediate results to memory in correct order
       sh_d[i + c_row_idx * 64] = b1;
@@ -86,8 +84,7 @@ struct tensor_fft_4096 {
 
       // 3. Compute FFT on 64 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[reg_idx], local_b[reg_idx + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2);
     }
 
     block.sync();

@@ -7,10 +7,7 @@
 
 #include <common.cuh>
 #include <reference.cuh>
-#include <tensor_fft_128.cuh>
 #include <tensor_fft_256.cuh>
-#include <tensor_fft_4096.cuh>
-#include <tensor_fft_512.cuh>
 #include <testing.cuh>
 
 int main() {
@@ -49,7 +46,7 @@ int main() {
   }
 
   if constexpr (config::print_results) {
-    for (int i = 0; i < 2 * data.size(); ++i) {
+    for (int i = 0; i < data.size(); ++i) {
       std::cout << " Ref: " << out_reference[i].real() << " "
                 << out_reference[i].imag()
                 << " Ten: " << out_algorithm[i].real() << " "

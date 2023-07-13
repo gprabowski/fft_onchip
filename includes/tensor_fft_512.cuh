@@ -78,8 +78,7 @@ struct tensor_fft_512 {
 
       // 3. Compute FFT on 512 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[2 * i], local_b[2 * i + 1],
-                                 twiddle1, twiddle2, indexing.transpose_lane_b1,
-                                 indexing.transpose_lane_b2);
+                                 twiddle1, twiddle2);
 
       fft_group.sync();
       // 4. Save intermediate results to memory in correct order
