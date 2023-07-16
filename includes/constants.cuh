@@ -3,7 +3,7 @@
 #include <config.hpp>
 
 namespace constants {
-constexpr __device__ __constant__ config::CT radix_8[64] = {
+static const config::CT radix_8[64] = {
     {1, -0},
     {0.995185, -0.0980171},
     {0.980785, -0.19509},
@@ -68,5 +68,5 @@ constexpr __device__ __constant__ config::CT radix_8[64] = {
     {0.95694, 0.290285},
     {0.980785, 0.19509},
     {0.995185, 0.0980172},
-}
+};
 }

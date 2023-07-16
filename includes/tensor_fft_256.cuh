@@ -2,7 +2,6 @@
 
 #include <c64_fft64.cuh>
 #include <common.cuh>
-#include <constants.cuh>
 #include <tensor_utils.cuh>
 
 namespace fft {
