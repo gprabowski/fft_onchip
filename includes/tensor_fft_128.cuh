@@ -23,8 +23,8 @@ struct tensor_fft_128 {
   const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
   const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
 
-  const CT a1 = pow_theta<8>(indexing.arow * indexing.acol);
-  const CT a2 = pow_theta<8>(indexing.arow * (indexing.acol + 4));
+  const CT a1 = pow_theta<8>(indexing.arow * (2 * indexing.acol));
+  const CT a2 = pow_theta<8>(indexing.arow * (2 * indexing.acol + 1));
 
   static constexpr char print_type[] = "MMA128";
 
@@ -62,28 +62,24 @@ struct tensor_fft_128 {
     // 1. Pre-load b for 1st iter
     // in here we tranpose the matrix (as its naturally
     // set in memory in a column major fashion)
-    local_b[0] = local_data[indexing.brow * 16 + indexing.bcol * 2];
-    local_b[1] = local_data[(indexing.brow + 4) * 16 + indexing.bcol * 2];
-
-    // 3. Preload for next iter
-    local_b[2] = local_data[1 + indexing.brow * 16 + indexing.bcol * 2];
-    local_b[3] = local_data[1 + (indexing.brow + 4) * 16 + indexing.bcol * 2];
+    local_b[0] = local_data[indexing.bpos / 2];
+    local_b[1] = local_data[indexing.bpos / 2 + 16];
+    local_b[2] = local_data[1 + indexing.bpos / 2];
+    local_b[3] = local_data[1 + indexing.bpos / 2 + 16];
 
     for (int i = 0; i < ffts_per_unit; ++i) {
       if (i + 1 < ffts_per_unit) {
-        local_b[4 * (i + 1)] =
-            local_data[i * Size + indexing.brow * 16 + indexing.bcol * 2];
+        local_b[4 * (i + 1)] = local_data[i * Size + indexing.bpos / 2];
         local_b[4 * (i + 1) + 1] =
-            local_data[i * Size + (indexing.brow + 4) * 16 + indexing.bcol * 2];
-        local_b[4 * (i + 1) + 2] =
-            local_data[i * Size + 1 + indexing.brow * 16 + indexing.bcol * 2];
+            local_data[i * Size + indexing.bpos / 2 + 16];
+        local_b[4 * (i + 1) + 2] = local_data[i * Size + 1 + indexing.bpos / 2];
         local_b[4 * (i + 1) + 3] =
-            local_data[i * Size + 1 + (indexing.brow + 4) * 16 +
-                       indexing.bcol * 2];
+            local_data[i * Size + 1 + indexing.bpos / 2 + 16];
       }
       // 3. Compute FFT on 128 elements
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[4 * i], local_b[4 * i + 1],
                                  twiddle1, twiddle2);
+
       fft_kernels::c64_fft64<CT>(a1, a2, local_b[4 * i + 2], local_b[4 * i + 3],
                                  twiddle1, twiddle2);
 
