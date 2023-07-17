@@ -53,7 +53,7 @@ src_preambule = """
 namespace bench {{
 """
 
-threads_necessary = {8: 32, 64: 32, 128: 32, 256: 32, 512: 256, 4096: 512}
+threads_necessary = {8: 32, 64: 32, 128: 32, 256: 32, 512: 64, 4096: 512}
 
 def main():
     main_header = open(f"../includes/bench.cuh", "w")
