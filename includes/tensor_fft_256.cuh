@@ -2,11 +2,12 @@
 
 #include <c64_fft64.cuh>
 #include <common.cuh>
+#include <constants.cuh>
 #include <tensor_utils.cuh>
 
 namespace fft {
 
-template <typename CT, int Size, int UPB = 8, int FPU = 1>
+template <typename CT, int Size, int UPB = 2, int FPU = 1>
 struct tensor_fft_256 {
   using this_t = tensor_fft_256<CT, Size>;
 
@@ -17,25 +18,13 @@ struct tensor_fft_256 {
 
   mma_fp64_884_indexes indexing;
 
-  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
-  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
-
-  const CT a1 = pow_theta<8>(indexing.arow * (2 * indexing.acol));
-  const CT a2 = pow_theta<8>(indexing.arow * (2 * indexing.acol + 1));
-
-  const CT tw3 = pow_theta<256>(indexing.cpos);
-  const CT tw4 = pow_theta<256>(indexing.cpos + 1);
-
   static constexpr char print_type[] = "MMA256";
 
   static_assert(Size == 256, "SIZE MUST BE 256");
 
-  template <int N> inline __device__ CT pow_theta(int p) const {
-    p = p % N;
-    float s, c;
-    const float ang = p * (-2.f / N);
-    sincospif(ang, &s, &c);
-    return {c, s};
+  template <int N> __forceinline__ __device__ CT pow_theta(int p) const {
+    return {constants::twiddles[2 * ((p & (N - 1)) * 256 / N)],
+            constants::twiddles[2 * ((p & (N - 1)) * 256 / N) + 1]};
   }
 
   CT *sh_d;
@@ -50,46 +39,86 @@ struct tensor_fft_256 {
                            ((threadIdx.x + blockDim.x * threadIdx.y) / 32);
 
     for (int i = 0; i < ffts_per_unit; ++i) {
-#pragma unroll 4
-      for (int load_i = 0; load_i < 4; ++load_i) {
-        // preloading doesn't give anything
-        b[2 * load_i] = data[load_i + indexing.bpos];
-        b[2 * load_i + 1] = data[load_i + indexing.bpos + 32];
+      const auto a1 = pow_theta<8>(indexing.arow * (2 * indexing.acol));
+      const auto a2 = pow_theta<8>(indexing.arow * (2 * indexing.acol + 1));
+
+      // radix-8
+      for (int j = 0; j < 4; ++j) {
+        b[2 * j] = data[8 * j + indexing.brow * 2 * 32 + indexing.bcol];
+        b[2 * j + 1] =
+            data[8 * j + (indexing.brow * 2 + 1) * 32 + indexing.bcol];
+
+        double s11, s12, s21, s22, s31, s32;
+        s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
+        karatsuba_inline_mma_8x8x8(a1, a2, b[2 * j], b[2 * j + 1], s11, s12,
+                                   s21, s22, s31, s32);
+
+        b[2 * j].real(s11 - s21);
+        b[2 * j].imag(s31 - s21 - s11);
+        b[2 * j + 1].real(s12 - s22);
+        b[2 * j + 1].imag(s32 - s22 - s12);
       }
 
-      fft_kernels::c64_fft64<CT>(a1, a2, b[0], b[1], twiddle1, twiddle2);
-      fft_kernels::c64_fft64<CT>(a1, a2, b[2], b[3], twiddle1, twiddle2);
-      fft_kernels::c64_fft64<CT>(a1, a2, b[4], b[5], twiddle1, twiddle2);
-      fft_kernels::c64_fft64<CT>(a1, a2, b[6], b[7], twiddle1, twiddle2);
+      // twiddle
+      b[2] *= pow_theta<32>(indexing.crow);
+      b[4] *= pow_theta<32>(2 * indexing.crow);
+      b[6] *= pow_theta<32>(3 * indexing.crow);
 
-      b[2] *= tw3;
-      b[4] *= tw3 * tw3;
-      b[6] *= tw3 * tw3 * tw3;
+      b[3] *= pow_theta<32>(indexing.crow);
+      b[5] *= pow_theta<32>(2 * indexing.crow);
+      b[7] *= pow_theta<32>(3 * indexing.crow);
 
-      b[3] *= tw4;
-      b[5] *= tw4 * tw4;
-      b[7] *= tw4 * tw4 * tw4;
+      // radix-4
 
-      data[indexing.cpos] = b[0] + b[2] + b[4] + b[6];
-      data[indexing.cpos + 64] =
-          b[0] - b[4] -
-          CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
-      data[indexing.cpos + 128] = b[0] + b[4] - (b[2] + b[6]);
-      data[indexing.cpos + 192] =
-          b[0] - b[4] +
-          CT{-b[2].imag() + b[6].imag(), b[2].real() - b[6].real()};
+      const auto tmp1 = b[0] + b[4];
+      const auto tmp2 = b[0] - b[4];
+      const auto tmp3 = b[1] + b[5];
+      const auto tmp4 = b[1] - b[5];
 
-      data[indexing.cpos + 1] = b[1] + b[3] + b[5] + b[7];
-      data[indexing.cpos + 65] =
-          b[1] - b[5] -
-          CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
-      data[indexing.cpos + 129] = b[1] + b[5] - (b[3] + b[7]);
-      data[indexing.cpos + 193] =
-          b[1] - b[5] +
-          CT{-b[3].imag() + b[7].imag(), b[3].real() - b[7].real()};
+      const auto tmp5 = b[2] + b[6];
+      const auto tmp6 = b[2] - b[6];
+      const auto tmp7 = b[3] + b[7];
+      const auto tmp8 = b[3] - b[7];
 
-      data += Size;
+      const auto tmp9 = CT{-tmp6.imag(), tmp6.real()};
+      const auto tmp10 = CT{-tmp8.imag(), tmp8.real()};
+
+      b[0] = tmp1 + tmp5;
+      b[1] = tmp3 + tmp7;
+
+      b[2] = tmp2 - tmp9;
+      b[3] = tmp4 - tmp10;
+
+      b[4] = tmp1 - tmp5;
+      b[5] = tmp3 - tmp7;
+
+      b[6] = tmp2 + tmp9;
+      b[7] = tmp4 + tmp10;
+
+      // and radix-8 again
+
+      for (int j = 0; j < 4; ++j) {
+        // first twiddle
+        b[2 * j] *= pow_theta<256>(indexing.brow * 2 * (indexing.bcol + j * 8));
+        b[2 * j + 1] *=
+            pow_theta<256>((indexing.brow * 2 + 1) * (indexing.bcol + j * 8));
+
+        double s11, s12, s21, s22, s31, s32;
+        s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
+        karatsuba_inline_mma_8x8x8(a1, a2, b[2 * j], b[2 * j + 1], s11, s12,
+                                   s21, s22, s31, s32);
+
+        b[2 * j].real(s11 - s21);
+        b[2 * j].imag(s31 - s21 - s11);
+        b[2 * j + 1].real(s12 - s22);
+        b[2 * j + 1].imag(s32 - s22 - s12);
+
+        data[(indexing.ccol + j * 8) + indexing.crow * 32] = b[2 * j];
+        data[(indexing.ccol + 1 + j * 8) + indexing.crow * 32] = b[2 * j + 1];
+      }
     }
+
+    data += Size;
   }
 };
 } // namespace fft
