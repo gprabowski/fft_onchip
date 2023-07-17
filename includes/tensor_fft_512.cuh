@@ -20,9 +20,6 @@ struct tensor_fft_512 {
 
   mma_fp64_884_indexes indexing;
 
-  const CT twiddle1 = pow_theta<64>(indexing.crow * indexing.ccol);
-  const CT twiddle2 = pow_theta<64>(indexing.crow * (indexing.ccol + 1));
-
   const CT a1 = pow_theta<8>(indexing.arow * (2 * indexing.acol));
   const CT a2 = pow_theta<8>(indexing.arow * (2 * indexing.acol + 1));
 
@@ -45,13 +42,13 @@ struct tensor_fft_512 {
   __device__ void operator()() {
     const auto grid = cg::this_grid();
     const auto block = cg::this_thread_block();
-    const auto fft_group = cg::tiled_partition<64>(block);
+    const auto fft_group = cg::tiled_partition<128>(block);
     const auto warp = cg::tiled_partition<32>(fft_group);
 
     const auto warp_local_idx = warp.meta_group_rank();
 
     // local storage for all FFT elements
-    CT local_b[8];
+    CT local_b[4];
 
     auto local_data =
         (sh_d + Size * ffts_per_unit * (fft_group.meta_group_rank()));
@@ -59,61 +56,81 @@ struct tensor_fft_512 {
 #pragma unroll ffts_per_unit
     for (int fs = 0; fs < ffts_per_unit; ++fs) {
 
-#pragma unroll 4
-      for (int i = 0; i < 4; ++i) {
-        // 3. Compute FFT on 64 elements
-        local_b[2 * i] =
-            local_data[2 * i + warp.meta_group_rank() + indexing.bpos * 2];
+      // perform the initial radix-8
+#pragma unroll 2
+      for (int i = 0; i < 2; ++i) {
+        local_b[2 * i] = local_data[(indexing.brow * 2) * 64 + indexing.bcol +
+                                    i * 8 + warp_local_idx * 16];
         local_b[2 * i + 1] =
-            local_data[2 * i + warp.meta_group_rank() + indexing.bpos * 2 + 64];
-
-        fft_kernels::c64_fft64<CT>(a1, a2, local_b[2 * i], local_b[2 * i + 1],
-                                   twiddle1, twiddle2);
-
-        local_data[2 * i + warp.meta_group_rank() + indexing.crow * 64 +
-                   indexing.ccol * 8] = local_b[2 * i];
-        local_data[2 * i + warp.meta_group_rank() + indexing.crow * 64 +
-                   (indexing.ccol + 1) * 8] = local_b[2 * i + 1];
-      }
-
-      fft_group.sync();
-
-#pragma unroll 4
-      for (int i = 0; i < 4; ++i) {
-        const auto load_col =
-            indexing.bcol + (warp.meta_group_rank() + 2 * i) * 8;
-        const auto twiddle3 = pow_theta<512>(load_col * 2 * indexing.brow);
-        const auto twiddle4 =
-            pow_theta<512>(load_col * (2 * indexing.brow + 1));
-
-        local_data += (warp.meta_group_rank() + 2 * i) * 64;
-
-        local_b[2 * i] =
-            twiddle3 * local_data[indexing.brow * 2 + indexing.bcol * 8];
-        local_b[2 * i + 1] =
-            twiddle4 * local_data[indexing.brow * 2 + 1 + indexing.bcol * 8];
+            local_data[(indexing.brow * 2 + 1) * 64 + indexing.bcol + i * 8 +
+                       warp_local_idx * 16];
 
         double s11, s12, s21, s22, s31, s32;
         s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
         karatsuba_inline_mma_8x8x8(a1, a2, local_b[2 * i], local_b[2 * i + 1],
                                    s11, s12, s21, s22, s31, s32);
 
-        local_b[2 * i].real(s11 - s21);
-        local_b[2 * i].imag(s31 - s21 - s11);
-        local_b[2 * i + 1].real(s12 - s22);
-        local_b[2 * i + 1].imag(s32 - s22 - s12);
-
-        local_data -= (warp.meta_group_rank() + 2 * i) * 64;
+        local_data[indexing.crow * 64 + indexing.ccol + i * 8 +
+                   warp_local_idx * 16]
+            .real(s11 - s21);
+        local_data[indexing.crow * 64 + indexing.ccol + i * 8 +
+                   warp_local_idx * 16]
+            .imag(s31 - s21 - s11);
+        local_data[indexing.crow * 64 + indexing.ccol + 1 + i * 8 +
+                   warp_local_idx * 16]
+            .real(s12 - s22);
+        local_data[indexing.crow * 64 + indexing.ccol + 1 + i * 8 +
+                   warp_local_idx * 16]
+            .imag(s32 - s22 - s12);
       }
 
       fft_group.sync();
 
-#pragma unroll 4
-      for (int i = 0; i < 4; ++i) {
-        const auto elem_idx =
-            indexing.ccol + (warp.meta_group_rank() + 2 * i) * 8;
-        local_data[elem_idx + indexing.crow * 64] = local_b[2 * i];
-        local_data[elem_idx + 1 + indexing.crow * 64] = local_b[2 * i + 1];
+      // perform the remaining radix-64
+#pragma unroll 2
+      for (int i = 0; i < 2; ++i) {
+        const auto elem_idx = i + warp_local_idx * 2;
+        // load and twiddle
+        local_b[2 * i] = pow_theta<64>(elem_idx * ((indexing.brow * 2) * 8 +
+                                                   indexing.bcol)) *
+                         local_data[(indexing.brow * 2) * 8 + indexing.bcol +
+                                    i * 64 + warp_local_idx * 128];
+        local_b[2 * i + 1] =
+            pow_theta<64>(elem_idx *
+                          ((indexing.brow * 2 + 1) * 8 + indexing.bcol)) *
+            local_data[(indexing.brow * 2 + 1) * 8 + indexing.bcol + i * 64 +
+                       warp_local_idx * 128];
+
+        double s11, s12, s21, s22, s31, s32;
+        s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
+        karatsuba_inline_mma_8x8x8(a1, a2, local_b[2 * i], local_b[2 * i + 1],
+                                   s11, s12, s21, s22, s31, s32);
+
+        const auto n_elem_idx = indexing.crow * 8 + elem_idx;
+
+        local_b[2 * i] = pow_theta<512>(n_elem_idx * indexing.brow * 2) *
+                         CT{s11 - s21, s31 - s21 - s11};
+        local_b[2 * i + 1] =
+            pow_theta<512>(n_elem_idx * (indexing.brow * 2 + 1)) *
+            CT{s12 - s22, s32 - s22 - s12};
+
+        s11 = s12 = s22 = s21 = s31 = s32 = 0.0;
+        karatsuba_inline_mma_8x8x8(a1, a2, local_b[2 * i], local_b[2 * i + 1],
+                                   s11, s12, s21, s22, s31, s32);
+        local_b[2 * i].real(s11 - s21);
+        local_b[2 * i].imag(s31 - s21 - s11);
+        local_b[2 * i + 1].real(s12 - s22);
+        local_b[2 * i + 1].imag(s32 - s22 - s12);
+      }
+
+      fft_group.sync();
+
+      for (int i = 0; i < 2; ++i) {
+        const auto elem_idx = i + warp_local_idx * 2;
+        const auto out_offset =
+            elem_idx + 8 * indexing.ccol + indexing.crow * 64;
+        local_data[out_offset] = local_b[2 * i];
+        local_data[out_offset + 8] = local_b[2 * i + 1];
       }
 
       local_data += Size;

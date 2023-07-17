@@ -7,12 +7,12 @@
 
 #include <common.cuh>
 #include <reference.cuh>
-#include <tensor_fft_256.cuh>
+#include <tensor_fft_512.cuh>
 #include <testing.cuh>
 
 int main() {
   using config::CT;
-  constexpr auto N = 256;
+  constexpr auto N = 512;
 
   std::random_device rd;
   std::uniform_real_distribution<float> dist(0.0, 1.0);
@@ -27,7 +27,7 @@ int main() {
   // compare correctness
   std::vector<config::CT> out_algorithm(N), out_reference(N);
 
-  using customExec = fft::tensor_fft_256<config::CT, N>;
+  using customExec = fft::tensor_fft_512<config::CT, N>;
   using refExec = fft::reference_fft<N>;
 
   const auto alg_run_transfers =

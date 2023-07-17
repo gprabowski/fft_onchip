@@ -1,7 +1,7 @@
 #pragma once
 
-#include <vector>
 #include <iostream>
+#include <vector>
 
 #include "device_launch_parameters.h"
 #include <cooperative_groups.h>
@@ -15,7 +15,7 @@ namespace cg = cooperative_groups;
 
 template <typename CT, typename FFTExec, int Size, int FFTsPerBlock>
 
-__launch_bounds__(FFTExec::max_threads_per_block) __global__
+__launch_bounds__(128) __global__
     void fft_tester(int inner_repeats, CT *data, bool with_transfers = true) {
   extern __shared__ __align__(sizeof(CT)) char shared[];
   CT *shared_data = reinterpret_cast<CT *>(shared);
@@ -36,10 +36,13 @@ __launch_bounds__(FFTExec::max_threads_per_block) __global__
 
   block.sync();
 
-  FFTExec fft(shared_data);
+  if (threadIdx.x < FFTExec::threads) {
+
+    FFTExec fft(shared_data);
 #pragma unroll 1
-  for (int i = 0; i < inner_repeats; ++i) {
-    fft();
+    for (int i = 0; i < inner_repeats; ++i) {
+      fft();
+    }
   }
 
   block.sync();
@@ -78,8 +81,8 @@ run_fft_kernel(int inner_runs, int shared_size, CT *data, size_t sm_count,
 
   gpuErrchk(cudaEventRecord(start));
   fft_tester<CT, FFTExec, Size, FFTExec::units_per_block>
-      <<<blocks, threads, final_shared>>>(
-          inner_runs, data, WithMemoryTransfers);
+      <<<blocks, threads, final_shared>>>(inner_runs, data,
+                                          WithMemoryTransfers);
   gpuErrchk(cudaEventRecord(stop));
   gpuErrchk(cudaPeekAtLastError());
   gpuErrchk(cudaDeviceSynchronize());
@@ -105,20 +108,20 @@ double run_perf_tests(const std::vector<config::CT> &h_data,
   cudaGetDeviceProperties(&props, 0);
   const auto sm_count = props.multiProcessorCount;
 
-  CT* d_data;
-  cudaMalloc((void**)&d_data, h_data.size() * block_multiplier * sm_count * sizeof(CT));
+  CT *d_data;
+  cudaMalloc((void **)&d_data,
+             h_data.size() * block_multiplier * sm_count * sizeof(CT));
 
   for (int i = 0; i < block_multiplier * sm_count; ++i) {
-    cudaMemcpy((void*)(d_data + i * h_data.size()), (void*)h_data.data(), h_data.size() * sizeof(CT), cudaMemcpyHostToDevice);
+    cudaMemcpy((void *)(d_data + i * h_data.size()), (void *)h_data.data(),
+               h_data.size() * sizeof(CT), cudaMemcpyHostToDevice);
   }
 
   const auto time_100 = run_fft_kernel<CT, Size, FFTExec, WithMemoryTransfers>(
-      100, sm_size, d_data, sm_count,
-      block_multiplier);
+      100, sm_size, d_data, sm_count, block_multiplier);
 
   const auto time_1100 = run_fft_kernel<CT, Size, FFTExec, WithMemoryTransfers>(
-      1100, sm_size, d_data, sm_count,
-      block_multiplier);
+      1100, sm_size, d_data, sm_count, block_multiplier);
 
   // Will return time in microseconds
   const double final_time = static_cast<double>(time_1100 - time_100) / 1000.0;
@@ -152,23 +155,25 @@ double run_perf_and_corr_tests(const std::vector<config::CT> &h_data,
   cudaGetDeviceProperties(&props, 0);
   const auto sm_count = props.multiProcessorCount;
 
-  CT* d_data;
+  CT *d_data;
 
-  cudaMalloc((void**)&d_data, h_data.size() * block_multiplier * sm_count * sizeof(CT));
+  cudaMalloc((void **)&d_data,
+             h_data.size() * block_multiplier * sm_count * sizeof(CT));
 
   for (int i = 0; i < block_multiplier * sm_count; ++i) {
-    cudaMemcpy((void*)(d_data + i * h_data.size()), (void*)h_data.data(), h_data.size() * sizeof(CT), cudaMemcpyHostToDevice);
+    cudaMemcpy((void *)(d_data + i * h_data.size()), (void *)h_data.data(),
+               h_data.size() * sizeof(CT), cudaMemcpyHostToDevice);
   }
 
   constexpr auto sm_size = Size * sizeof(CT);
 
   // correctness check
   run_fft_kernel<CT, Size, FFTExec, WithMemoryTransfers>(
-      1, sm_size, d_data, sm_count,
-      block_multiplier);
+      1, sm_size, d_data, sm_count, block_multiplier);
 
   out.resize(h_data.size());
-  cudaMemcpy((void*)out.data(), (void*)d_data, h_data.size() * sizeof(CT), cudaMemcpyDeviceToHost);
+  cudaMemcpy((void *)out.data(), (void *)d_data, h_data.size() * sizeof(CT),
+             cudaMemcpyDeviceToHost);
 
   return run_perf_tests<CT, Size, FFTExec, WithMemoryTransfers>(
       h_data, block_multiplier);
