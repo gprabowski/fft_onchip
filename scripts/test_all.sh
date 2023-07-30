@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 
-# 1. Perform bench testing for the best config
-cd ../build/
+rm ../src/bench/*
+rm ../includes/bench/*
+./generate_bench.py
+
+cd ../
+
+mkdir build
+cd build
+
+cmake ../ -DCMAKE_CUDA_ARCHITECTURES=80 -Dmathdx_ROOT=/home/soft/mathdx/nvidia/mathdx/22.11 -GNinja
+ninja
 
 if [ -f "bench_fft" ]; then
     ./bench_fft > ../scripts/results/configs.csv
